@@ -71,15 +71,20 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 void
 rel_destroy (rel_t *r)
 {
+	//Manage linked list
 	if (r->next)
 		r->next->prev = r->prev;
 	*r->prev = r->next;
+	
+	clock_t end_time = clock();
+	printf("The time taken to transfer the file was of %ju milliseconds\n",(uintmax_t)(end_time - r->start_time));
+	
 	conn_destroy (r->c);
 	
 	/* Free any other allocated memory here */
-	clock_t end_time = clock();
-	printf("The time taken to transfer the file was of %ju milliseconds\n",(uintmax_t)(end_time - r->start_time));
-
+	//Don't worry about the connection, rlib frees the connection pointer.
+	free(r);
+	
 }
 
 

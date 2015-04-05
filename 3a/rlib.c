@@ -340,6 +340,7 @@ void
 conn_destroy (conn_t *c)
 {
 	c->delete_me = 1;
+	//Conn_poll checks for this flag then calls conn_free.
 }
 
 void
