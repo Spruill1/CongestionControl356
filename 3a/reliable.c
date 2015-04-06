@@ -29,6 +29,8 @@
 #define RST_READ			10
 #define RST_WRITE			11
 
+#define ACK_HEADER_SIZE		8
+#define PKT_HEADER_SIZE		12
 #define MAX_DATA_SIZE		500
 struct reliable_state {
 	rel_t *next;			/* Linked list for traversing all connections */
@@ -92,6 +94,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		ss = NULL;
 	} else
 		return NULL;
+	r->state = RST_LISTEN;
 	
 	return r;
 }
@@ -145,9 +148,21 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
-	packet_t *packet;
-	packet = xmalloc(sizeof(*packet));
 	
+	if(s->state==RST_LISTEN){
+		//Send SYN
+		struct ack_packet *ack;
+		ack = xmalloc(sizeof(struct ack_packet));
+		ack->ackno = 0;
+		ack->len = ACK_HEADER_SIZE;
+		
+		//Compute checksum
+		
+	}
+
+	packet_t *packet;
+	packet = xmalloc(sizeof(packet_t));
+
 	int numBytes = conn_input (s->c, packet->data, MAX_DATA_SIZE);
 	
 	if (numBytes<=0){
