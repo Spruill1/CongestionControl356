@@ -157,7 +157,6 @@ rel_read (rel_t *s)
 		ack->len = ACK_HEADER_SIZE;
 		
 		//Compute checksum
-		ack->cksum = cksum((void *)ack, 12); //all packets are 12 bytes
 		
 	}
 
