@@ -66,11 +66,13 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	//Initialize timer
 	r->start_time = clock();
 	
-	//Exactly one should be NULL
+	//Allocate ss and cc, exactly one should be NULL
 	if(!ss){
+		r->ss = xmalloc(sizeof(struct sockaddr_storage));
 		memcpy(&r->ss,ss,sizeof(struct sockaddr_storage));
 		cc = NULL;
 	} else if(!cc){
+		r->cc = xmalloc(sizeof(struct config_common));
 		memcpy(&r->cc,cc,sizeof(struct config_common));
 		ss = NULL;
 	} else
@@ -94,6 +96,8 @@ rel_destroy (rel_t *r)
 	
 	/* Free any other allocated memory here */
 	//Don't worry about the connection, rlib frees the connection pointer.
+	free(r->ss);
+	free(r->cc);
 	free(r);
 	
 }
