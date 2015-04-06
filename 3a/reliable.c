@@ -54,6 +54,7 @@ struct reliable_state {
 	struct sockaddr_storage *ss;
 
 	window_entry *window; //we need to store sending buffer so that we can retransmit if necessary
+	uint32_t next_seqno;
 	
 	int state;
 };
@@ -87,6 +88,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->c = c;
 	r->next = rel_list;
 	r->prev = &rel_list;
+
+	r->next_seqno = 1;
 	
 	//initialize the window
 	r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window); 
@@ -174,16 +177,35 @@ int windowIndex(rel_t *r){
 }
 
 void
-rel_read (rel_t *s)
+rel_read (rel_t *r)
 {
 	unsigned int bytes_to_read = 0;
+
+	packet_t *pkt = (packet_t*)xmalloc(sizeof(packet_t));
 	
-	while((bytes_to_read = conn_input(s->c, packet->data, MAX_DATA_SIZE)) > 0){
+	while((bytes_to_read = conn_input(r->c, pkt->data, MAX_DATA_SIZE)) > 0){
 		//we can read some number of bytes in and send them in a packet
-		if(
+		int win_index = windowIndex(r);
+		if(win_index == 0) return; // must wait for the input
+		else if(win_index == -1) { // EOF reached 
+			pkt->seqno = htonl(r->next_seqno); r->next_seqno++;
+			pkt->len = htons(PKT_HEADER_SIZE);
+			pkt->ackno=htonl(0);
+			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
+			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
+		}
+		else {
+			//make a normal packet and add it to the window
+			pkt->seqno = htonl(r->next_seqno);  r->next_seqno++;
+			pkt->len = htons(PKT_HEADER_SIZE+bytes_to_read);
+			pkt->ackno=htonl(0);
+			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
+			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
+		}
 	}
 
-	if(s->state==RST_LISTEN){
+/* - yosh, not sure what you were trying to do here...
+	if(r->state==RST_LISTEN){
 		//Send SYN
 		struct ack_packet *ack;
 		ack = xmalloc(sizeof(struct ack_packet));
@@ -198,7 +220,7 @@ rel_read (rel_t *s)
 	packet_t *packet;
 	packet = xmalloc(sizeof(packet_t));
 
-	int numBytes = conn_input (s->c, packet->data, MAX_DATA_SIZE);
+	int numBytes = conn_input (r->c, packet->data, MAX_DATA_SIZE);
 	
 	if (numBytes<=0){
 		modefree (packet);
@@ -207,6 +229,7 @@ rel_read (rel_t *s)
 	//TODO: 3 way habndshake packet with no data first? read 0
 	//TODO: Account for states?
 	//TODO: EOF?
+*/
 }
 
 void
