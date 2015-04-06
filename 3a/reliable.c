@@ -153,11 +153,11 @@ rel_read (rel_t *s)
 		//Send SYN
 		struct ack_packet *ack;
 		ack = xmalloc(sizeof(struct ack_packet));
-		ack->ackno = 0;
-		ack->len = ACK_HEADER_SIZE;
+		ack->ackno = htonl(0); //host to network byte ordering
+		ack->len = htons(ACK_HEADER_SIZE); //host to network byte ordering
 		
 		//Compute checksum
-		ack->cksum = cksum((void *)ack, 12); //all packets are 12 bytes
+		ack->cksum = cksum((void *)ack, 12); //all packets are 12 bytes - method handles bytes ordering
 		
 	}
 
