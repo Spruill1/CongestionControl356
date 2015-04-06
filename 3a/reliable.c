@@ -25,7 +25,8 @@ struct reliable_state {
 	
 	/* Add your own data fields below this */
 	clock_t start_time;
-	
+	const struct config_common *cc;
+	const struct sockaddr_storage *ss;
 };
 rel_t *rel_list;
 
@@ -64,6 +65,16 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	/* Do any other initialization you need here */
 	//Initialize timer
 	r->start_time = clock();
+	
+	//Exactly one should be NULL
+	if(!ss){
+		memcpy(&r->ss,ss,sizeof(struct sockaddr_storage));
+		cc = NULL;
+	} else if(!cc){
+		memcpy(&r->cc,cc,sizeof(struct config_common));
+		ss = NULL;
+	} else
+		return NULL;
 	
 	return r;
 }
