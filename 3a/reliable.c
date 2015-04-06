@@ -16,20 +16,20 @@
 #include "rlib.h"
 
 //Reliable TCP States will be later transferred to rlib.h
-#default RST_CLOSED			0
-#default RST_LISTEN			1
-#default RST_SYN_SENT		2
-#default RST_SYN_RCVD		3
-#default RST_ESTABLISHED	4
-#default RST_FIN_WAIT_1		5
-#default RST_FIN_WAIT_2		6
-#default RST_CLOSING		7
-#default RST_CLOSE_WAIT		8
-#default RST_LAST_ACK		9
-#default RST_READ			10
-#default RST_WRITE			11
+#define RST_CLOSED			0
+#define RST_LISTEN			1
+#define RST_SYN_SENT		2
+#define RST_SYN_RCVD		3
+#define RST_ESTABLISHED		4
+#define RST_FIN_WAIT_1		5
+#define RST_FIN_WAIT_2		6
+#define RST_CLOSING			7
+#define RST_CLOSE_WAIT		8
+#define RST_LAST_ACK		9
+#define RST_READ			10
+#define RST_WRITE			11
 
-
+#define MAX_DATA_SIZE		500
 struct reliable_state {
 	rel_t *next;			/* Linked list for traversing all connections */
 	rel_t **prev;
@@ -38,8 +38,8 @@ struct reliable_state {
 	
 	/* Add your own data fields below this */
 	clock_t start_time;
-	const struct config_common *cc;
-	const struct sockaddr_storage *ss;
+	struct config_common *cc;
+	struct sockaddr_storage *ss;
 	
 	int state;
 };
@@ -145,7 +145,18 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 void
 rel_read (rel_t *s)
 {
-	//
+	packet_t *packet;
+	packet = xmalloc(sizeof(*packet));
+	
+	int numBytes = conn_input (s->c, packet->data, MAX_DATA_SIZE);
+	
+	if (numBytes<=0){
+		free (packet);
+		return;
+	}
+	//TODO: 3 way habndshake packet with no data first? read 0
+	//TODO: Account for states?
+	//TODO: EOF?
 }
 
 void
@@ -159,3 +170,5 @@ rel_timer ()
 	/* Retransmit any packets that need to be retransmitted */
 	
 }
+
+
