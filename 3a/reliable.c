@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <stdbool.h>
 
 #include "rlib.h"
 
@@ -101,7 +102,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	
 	/* Do any other initialization you need here */
 	//Initialize timer
-	r->start_time = clock();
+	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
 	
 	//Allocate ss and cc, exactly one should be NULL
 	if(!ss){
