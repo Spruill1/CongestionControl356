@@ -259,7 +259,7 @@ rel_timer ()
 	while(curr->next){
 		for(int i = 0; i < curr->cc->window; i++){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
-			if(curr->window[i].valid && currTime - curr->window[i].)
+			//if(curr->window[i].valid && currTime - curr->window[i].)
 		}
 	}
 	
