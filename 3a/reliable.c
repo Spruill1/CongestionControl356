@@ -96,8 +96,10 @@ rel_destroy (rel_t *r)
 	
 	/* Free any other allocated memory here */
 	//Don't worry about the connection, rlib frees the connection pointer.
-	free(r->ss);
-	free(r->cc);
+	if(r->ss)
+		free(r->ss);
+	if(r->cc)
+		free(r->cc);
 	free(r);
 	
 }
