@@ -32,6 +32,16 @@
 #define ACK_HEADER_SIZE		8
 #define PKT_HEADER_SIZE		12
 #define MAX_DATA_SIZE		500
+
+/*
+     This struct will keep track of packets in our sending/receiving windows
+*/	
+typedef struct window_entry{
+	packet_t pkt;
+	clock_t sent_time;
+	bool valid;
+}window_entry;
+
 struct reliable_state {
 	rel_t *next;			/* Linked list for traversing all connections */
 	rel_t **prev;
@@ -42,6 +52,8 @@ struct reliable_state {
 	clock_t start_time;
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
+
+	window_entry *window; //we need to store sending buffer so that we can retransmit if necessary
 	
 	int state;
 };
@@ -75,6 +87,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->c = c;
 	r->next = rel_list;
 	r->prev = &rel_list;
+	
+	//initialize the window
+	r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window); 
+	for(int i=0;i<cc->window;i++){r->window[i].valid=false;}
+
 	if (rel_list)
 		rel_list->prev = &r->next;
 	rel_list = r;
@@ -113,6 +130,8 @@ rel_destroy (rel_t *r)
 	conn_destroy (r->c);
 	
 	/* Free any other allocated memory here */
+	free(r->window);
+
 	//Don't worry about the connection, rlib frees the connection pointer.
 	if(r->ss)
 		free(r->ss);
@@ -144,11 +163,26 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	
 }
 
+/*
+  determine the first available window index to place this packet, -1 if none is available
+*/
+int windowIndex(rel_t *r){
+	for(int i = 0; i < r->cc->window; i++){
+		if(!r->window[i].valid) return i;
+	}
+	return -1;
+}
 
 void
 rel_read (rel_t *s)
 {
+	unsigned int bytes_to_read = 0;
 	
+	while((bytes_to_read = conn_input(s->c, packet->data, MAX_DATA_SIZE)) > 0){
+		//we can read some number of bytes in and send them in a packet
+		if(
+	}
+
 	if(s->state==RST_LISTEN){
 		//Send SYN
 		struct ack_packet *ack;
@@ -167,7 +201,7 @@ rel_read (rel_t *s)
 	int numBytes = conn_input (s->c, packet->data, MAX_DATA_SIZE);
 	
 	if (numBytes<=0){
-		free (packet);
+		modefree (packet);
 		return;
 	}
 	//TODO: 3 way habndshake packet with no data first? read 0
@@ -178,7 +212,7 @@ rel_read (rel_t *s)
 void
 rel_output (rel_t *r)
 {
-
+	
 }
 
 void
