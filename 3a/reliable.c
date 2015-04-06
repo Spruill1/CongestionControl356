@@ -38,7 +38,7 @@
 */	
 typedef struct window_entry{
 	packet_t pkt;
-	clock_t sent_time;
+	struct timespec sen;
 	bool valid;
 }window_entry;
 
@@ -49,7 +49,7 @@ struct reliable_state {
 	conn_t *c;			/* This is the connection object */
 	
 	/* Add your own data fields below this */
-	clock_t start_time;
+	struct timespec start_time;
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
 
@@ -127,8 +127,9 @@ rel_destroy (rel_t *r)
 		r->next->prev = r->prev;
 	*r->prev = r->next;
 	
-	clock_t end_time = clock();
-	printf("The time taken to transfer the file was of %ju milliseconds\n",(uintmax_t)(end_time - r->start_time));
+	struct timespec end_time;
+	clock_gettime(CLOCK_MONOTONIC,&end_time);
+	printf("The time taken to transfer the file was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
 	
 	conn_destroy (r->c);
 	
@@ -193,6 +194,8 @@ rel_read (rel_t *r)
 			pkt->ackno=htonl(0);
 			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
 			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
+
+			r->window[win_index].valid=true;
 		}
 		else {
 			//make a normal packet and add it to the window
@@ -201,8 +204,15 @@ rel_read (rel_t *r)
 			pkt->ackno=htonl(0);
 			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
 			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
+
+			r->window[win_index].valid=true;
 		}
 	}
+
+
+	//I don't think that the packets will actually get sent here...  but maybe?
+
+
 
 /* - yosh, not sure what you were trying to do here...
 	if(r->state==RST_LISTEN){
@@ -242,6 +252,15 @@ void
 rel_timer ()
 {
 	/* Retransmit any packets that need to be retransmitted */
+	//iterate throught the window and if an item is valid & it was transmitted > rel_t->cc->timeout milliseconds ago, then retransmit it.
+
+	rel_t *curr = rel_list;
+	while(curr->next){
+		for(int i = 0; i < curr->cc->window; i++){
+			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
+			if(curr->window[i].valid && currTime - curr->window[i].)
+		}
+	}
 	
 }
 
