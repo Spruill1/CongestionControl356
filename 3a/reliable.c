@@ -15,6 +15,19 @@
 
 #include "rlib.h"
 
+//Reliable TCP States will be later transferred to rlib.h
+#default RST_CLOSED			0
+#default RST_LISTEN			1
+#default RST_SYN_SENT		2
+#default RST_SYN_RCVD		3
+#default RST_ESTABLISHED	4
+#default RST_FIN_WAIT_1		5
+#default RST_FIN_WAIT_2		6
+#default RST_CLOSING		7
+#default RST_CLOSE_WAIT		8
+#default RST_LAST_ACK		9
+#default RST_READ			10
+#default RST_WRITE			11
 
 
 struct reliable_state {
@@ -27,6 +40,8 @@ struct reliable_state {
 	clock_t start_time;
 	const struct config_common *cc;
 	const struct sockaddr_storage *ss;
+	
+	int state;
 };
 rel_t *rel_list;
 
@@ -123,12 +138,14 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+	
 }
 
 
 void
 rel_read (rel_t *s)
 {
+	//
 }
 
 void
