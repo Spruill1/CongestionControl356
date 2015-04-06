@@ -44,7 +44,8 @@ static void conn_mkevents (void);
 static int debug_recv (int s, packet_t *buf, size_t len, int flags,
 					   struct sockaddr_storage *from);
 
-int cevents_generation;
+int cevents_generation; //changes based on how many connection create/free happen. reset to 0 by conn_poll
+
 static struct pollfd *cevents;
 static int ncevents;
 static conn_t **evreaders;
@@ -383,6 +384,11 @@ conn_drain (conn_t *c)
 		rel_output (c->rel);
 }
 
+/*
+ * Manages the cevent, evreaders and evwrites arrays, ncevents(number of events)
+ * Allocates and deallocates cevent, evreaders and evwrites arrays
+ * Sets conn_t poll offsets and flags
+ */
 static void
 conn_mkevents (void)
 {
@@ -495,13 +501,19 @@ need_timer_in (const struct timespec *last, long timer)
 	timer - to;
 }
 
+/*
+ * Implements the poll function. It waits for one of a
+ * set of file descriptors to become ready to perform I/O.
+ * Check manpages.
+ */
 void
 conn_poll (const struct config_common *cc)
 {
 	int n, i;
 	conn_t *c, *nc;
-	static int last_cg;
-	
+	static int last_cg;// ==0 static objects have static storage duration
+
+	//Reset cevents_generation
 	if (last_cg != cevents_generation) {
 		conn_mkevents ();
 		cevents_generation = last_cg;
