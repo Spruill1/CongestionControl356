@@ -40,9 +40,15 @@
      This struct will keep track of packets in our sending/receiving windows
  */
 typedef struct window_entry{
+	struct window_entry *next;			/* Linked list for traversing all windows */
+	struct window_entry *prev;
+	
 	packet_t pkt;
 	struct timespec sen;
+	
 	bool valid;
+	
+	
 }window_entry;
 
 struct reliable_state {
@@ -55,10 +61,21 @@ struct reliable_state {
 	struct timespec start_time;
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
-	uint32_t last_seqno;
 
-	window_entry *window; //we need to store sending buffer so that we can retransmit if necessary
+	window_entry *window_list;
+	
 	uint32_t next_seqno;
+	
+	
+	//Sender
+	uint32_t lastSeqAcked;
+	uint32_t lastSeqWritten;
+	uint32_t lastSeqSent;
+	
+	//Receiver
+	uint32_t nextSeqExpected;
+	uint32_t lastSeqRead;
+	uint32_t lastSeqReceived;
 
 	int state;
 };
@@ -96,12 +113,23 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->next_seqno = 1;
 
 	//initialize the window
-	r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window); 
-	for(int i=0;i<cc->window;i++){r->window[i].valid=false;}
-
+	//r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window);
+	//for(int i=0;i<cc->window;i++){r->window[i].valid=false;}
+	r->window_list = NULL;
+	
 	if (rel_list)
 		rel_list->prev = &r->next;
 	rel_list = r;
+	
+	//Sender
+	r->lastSeqAcked = 0;
+	r->lastSeqWritten = 0;
+	r->lastSeqSent = 0;
+	
+	//Receiver
+	r->nextSeqExpected = 0;
+	r->lastSeqRead = 0;
+	r->lastSeqReceived = 0;
 
 	/* Do any other initialization you need here */
 	//Initialize timer
@@ -119,6 +147,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	} else
 		return NULL;
 	r->state = RST_LISTEN;
+	
 
 	return r;
 }
@@ -138,7 +167,7 @@ rel_destroy (rel_t *r)
 	conn_destroy (r->c);
 
 	/* Free any other allocated memory here */
-	free(r->window);
+	//TODO: free(r->window);
 
 	//Don't worry about the connection, rlib frees the connection pointer.
 	if(r->ss)
@@ -189,13 +218,13 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	//TODO: verify the states stuff
 	if (pkt->len == ACK_HEADER_SIZE){
 		if (r->state == RST_WRITE){ // "WAITING_ACK"
-			if (pkt->ackno == r->last_seqno + 1){
+			if (pkt->ackno == r->lastSeqReceived + 1){
 				r->state = RST_READ; // "WAITING_INPUT_DATA"
 				rel_read(r);
 			}
 		}
 		else if (r->state == RST_LAST_ACK){ //"WAITING_EOF_ACK"
-			if (pkt->ackno == r->last_seqno + 1){
+			if (pkt->ackno == r->lastSeqReceived + 1){
 				// TODO: verify all the closing conditions.  confusion about states
 				r->state = RST_CLOSED;
 				rel_destroy(r);
@@ -237,74 +266,105 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
  */
 int windowIndex(rel_t *r){
 	for(int i = 0; i < r->cc->window; i++){
-		if(!r->window[i].valid) return i;
+		//if(!r->window[i].valid) return i;
 	}
 	return -1;
+}
+
+void windowList_enqueue(rel_t *r, window_entry *w){
+	window_entry *current;
+	if(r->window_list){
+		//window_list is null
+		r->window_list = w;
+		w->next = NULL;
+		w->prev = NULL;
+		return;
+	}
+	current = r->window_list;
+	//find end
+	while(current->next){
+		current = current->next;
+	}
+	current->next = w;
+	w->prev = current;
+	w->next = NULL;
+}
+
+int windowList_dequeue(rel_t *r, window_entry *w){
+	if(!r->window_list){
+		w = NULL;
+		return -1;
+	}
+	w = r->window_list;
+	r->window_list = w->next;
+	return 1;
+	
 }
 
 void
 rel_read (rel_t *r)
 {
-	unsigned int bytes_to_read = 0;
+	int bytes_read = 0;
+	int window_size = r->lastSeqWritten - r->lastSeqAcked;
+	packet_t packet;
+	uint32_t packet_size = 0;
 
-	packet_t *pkt = (packet_t*)xmalloc(sizeof(packet_t));
-
-	while((bytes_to_read = conn_input(r->c, pkt->data, MAX_DATA_SIZE)) > 0){
-		//we can read some number of bytes in and send them in a packet
-		int win_index = windowIndex(r);
-		if(win_index == 0) return; // must wait for the input
-		else if(win_index == -1) { // EOF reached 
-			pkt->seqno = htonl(r->next_seqno); r->next_seqno++;
-			pkt->len = htons(PKT_HEADER_SIZE);
-			pkt->ackno=htonl(0);
-			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
-			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
-
-			r->window[win_index].valid=true;
+	while(1){
+		//Check if we can create a new window entry
+		if(window_size > r->cc->window || window_size<0){
+			printf("ERROR: Window size greater than maximum permitted window size or negative");
+			return;
+		} else if (window_size == r->cc->window){
+			//Window is full!
+			return;
+		}else if(!(bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
+			//Nothing to read
+			return;
+		} else if(bytes_read<0 && errno==EIO){
+				perror("Conn_input failed due to IO error:");
+		} else if(!r->state==RST_ESTABLISHED){
+			//No established connection yet!
+			printf("Connection not yet established!\n");
+			return;
+		}
+		//Valid packet
+		window_entry *window = (window_entry *)xmalloc(sizeof(window_entry));
+		
+		if(bytes_read<0) { // EOF reached
+			packet_size = PKT_HEADER_SIZE;
+			//EOF packet has no data but has seqno
+			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
+			packet.len = htons(packet_size);
+			packet.ackno=htonl(0);
+			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
+			//save packet in window entry
+			memcpy(&window->pkt,&packet,sizeof(packet_t));
+			window->valid=true;
 		}
 		else {
 			//make a normal packet and add it to the window
-			pkt->seqno = htonl(r->next_seqno);  r->next_seqno++;
-			pkt->len = htons(PKT_HEADER_SIZE+bytes_to_read);
-			pkt->ackno=htonl(0);
-			pkt->cksum=cksum((void*)pkt,PKT_HEADER_SIZE);
-			memcpy(&(r->window[win_index]),pkt,sizeof(packet_t));
-
-			r->window[win_index].valid=true;
+			packet_size = PKT_HEADER_SIZE + bytes_read;
+			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
+			packet.len = htons(packet_size);
+			packet.ackno=htonl(0);
+			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
+			//save packet in window entry
+			memcpy(&window->pkt,&packet,sizeof(packet_t));
+			window->valid=true;
 		}
+		
+		//enqueue
+		windowList_enqueue(r, window);
+		//update window parameters
+		r->lastSeqWritten = window->pkt.seqno;
+		
+		//send packet?
+		conn_sendpkt(r->c, &window->pkt, packet_size);
 	}
 
 
 	//I don't think that the packets will actually get sent here...  but maybe?
 
-
-
-	/* - yosh, not sure what you were trying to do here...
-	if(r->state==RST_LISTEN){
-		//Send SYN
-		struct ack_packet *ack;
-		ack = xmalloc(sizeof(struct ack_packet));
-		ack->ackno = htonl(0); //host to network byte ordering
-		ack->len = htons(ACK_HEADER_SIZE); //host to network byte ordering
-
-		//Compute checksum
-		ack->cksum = cksum((void *)ack, 12); //all packets are 12 bytes - method handles bytes ordering
-
-	}
-
-	packet_t *packet;
-	packet = xmalloc(sizeof(packet_t));
-
-	int numBytes = conn_input (r->c, packet->data, MAX_DATA_SIZE);
-
-	if (numBytes<=0){
-		modefree (packet);
-		return;
-	}
-	//TODO: 3 way habndshake packet with no data first? read 0
-	//TODO: Account for states?
-	//TODO: EOF?
-	 */
 }
 
 void
