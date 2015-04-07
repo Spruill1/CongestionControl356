@@ -30,13 +30,15 @@
 #define RST_READ			10
 #define RST_WRITE			11
 
+// example uses different server and client states, thoughts? -John
+
 #define ACK_HEADER_SIZE		8
 #define PKT_HEADER_SIZE		12
 #define MAX_DATA_SIZE		500
 
 /*
      This struct will keep track of packets in our sending/receiving windows
-*/	
+ */
 typedef struct window_entry{
 	packet_t pkt;
 	struct timespec sen;
@@ -46,17 +48,18 @@ typedef struct window_entry{
 struct reliable_state {
 	rel_t *next;			/* Linked list for traversing all connections */
 	rel_t **prev;
-	
+
 	conn_t *c;			/* This is the connection object */
-	
+
 	/* Add your own data fields below this */
 	struct timespec start_time;
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
+	uint32_t last_seqno;
 
 	window_entry *window; //we need to store sending buffer so that we can retransmit if necessary
 	uint32_t next_seqno;
-	
+
 	int state;
 };
 rel_t *rel_list;
@@ -71,13 +74,13 @@ rel_t *rel_list;
  * rel_demux.) */
 rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
-			const struct config_common *cc)
+		const struct config_common *cc)
 {
 	rel_t *r;
-	
+
 	r = xmalloc (sizeof (*r));
 	memset (r, 0, sizeof (*r));
-	
+
 	if (!c) {
 		c = conn_create (r, ss);
 		if (!c) {
@@ -85,13 +88,13 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 			return NULL;
 		}
 	}
-	
+
 	r->c = c;
 	r->next = rel_list;
 	r->prev = &rel_list;
 
 	r->next_seqno = 1;
-	
+
 	//initialize the window
 	r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window); 
 	for(int i=0;i<cc->window;i++){r->window[i].valid=false;}
@@ -99,11 +102,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	if (rel_list)
 		rel_list->prev = &r->next;
 	rel_list = r;
-	
+
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
-	
+
 	//Allocate ss and cc, exactly one should be NULL
 	if(!ss){
 		r->ss = xmalloc(sizeof(struct sockaddr_storage));
@@ -116,7 +119,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	} else
 		return NULL;
 	r->state = RST_LISTEN;
-	
+
 	return r;
 }
 
@@ -127,13 +130,13 @@ rel_destroy (rel_t *r)
 	if (r->next)
 		r->next->prev = r->prev;
 	*r->prev = r->next;
-	
+
 	struct timespec end_time;
 	clock_gettime(CLOCK_MONOTONIC,&end_time);
 	printf("The time taken to transfer the file was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
-	
+
 	conn_destroy (r->c);
-	
+
 	/* Free any other allocated memory here */
 	free(r->window);
 
@@ -143,7 +146,7 @@ rel_destroy (rel_t *r)
 	if(r->cc)
 		free(r->cc);
 	free(r);
-	
+
 }
 
 
@@ -157,20 +160,81 @@ rel_destroy (rel_t *r)
  */
 void
 rel_demux (const struct config_common *cc,
-		   const struct sockaddr_storage *ss,
-		   packet_t *pkt, size_t len)
+		const struct sockaddr_storage *ss,
+		packet_t *pkt, size_t len)
 {
 }
 
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-	
+	// Check packet formation
+	if ((size_t) ntohs(pkt->len) < n){
+		return;
+	}
+	// Check checksum
+	uint16_t received_checksum = pkt->cksum;
+	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
+	if( cksum((void*)pkt, n) != received_checksum){
+		return;
+	}
+	// enforce host byte order
+	pkt->len = ntohs (pkt->len);
+	pkt->ackno = ntohl (pkt->ackno);
+	if (pkt->len > ACK_HEADER_SIZE) pkt->seqno = ntohl(pkt->seqno);
+
+	// Do some stuff with the packets
+
+	// Start by looking for Acks
+	//TODO: verify the states stuff
+	if (pkt->len == ACK_HEADER_SIZE){
+		if (r->state == RST_WRITE){ // "WAITING_ACK"
+			if (pkt->ackno == r->last_seqno + 1){
+				r->state = RST_READ; // "WAITING_INPUT_DATA"
+				rel_read(r);
+			}
+		}
+		else if (r->state == RST_LAST_ACK){ //"WAITING_EOF_ACK"
+			if (pkt->ackno == r->last_seqno + 1){
+				// TODO: verify all the closing conditions.  confusion about states
+				r->state = RST_CLOSED;
+				rel_destroy(r);
+			}
+		}
+	}
+	// must be data if it's not corrupted and not an ACK
+	else {
+		if (pkt->seqno <= r->next_seqno){
+			// TODO: send an ACK, nvm can't send if there's no room. defer and fix
+			if (r->state == RST_READ){ // "WAITING_DATA_PACKET"
+				if (pkt->len == PKT_HEADER_SIZE){
+					r->state = RST_CLOSED; // "SERVER FINISHED"
+					conn_output(r->c,NULL,0);
+					rel_destroy(r);
+				}
+				else {
+					// Garbage placeholder from the example
+					/*save_incoming_data_packet (relState, packet);
+
+				      if (flush_payload_to_output (relState))
+				      {
+				        create_and_send_ack_packet (relState, packet->seqno + 1);
+				        relState->nextInOrderSeqNo = packet->seqno + 1;
+				      }
+				      else
+				      {
+				        relState->serverState = WAITING_TO_FLUSH_DATA;
+				      }*/
+				}
+			}
+		}
+
+	}
 }
 
 /*
   determine the first available window index to place this packet, -1 if none is available
-*/
+ */
 int windowIndex(rel_t *r){
 	for(int i = 0; i < r->cc->window; i++){
 		if(!r->window[i].valid) return i;
@@ -184,7 +248,7 @@ rel_read (rel_t *r)
 	unsigned int bytes_to_read = 0;
 
 	packet_t *pkt = (packet_t*)xmalloc(sizeof(packet_t));
-	
+
 	while((bytes_to_read = conn_input(r->c, pkt->data, MAX_DATA_SIZE)) > 0){
 		//we can read some number of bytes in and send them in a packet
 		int win_index = windowIndex(r);
@@ -215,24 +279,24 @@ rel_read (rel_t *r)
 
 
 
-/* - yosh, not sure what you were trying to do here...
+	/* - yosh, not sure what you were trying to do here...
 	if(r->state==RST_LISTEN){
 		//Send SYN
 		struct ack_packet *ack;
 		ack = xmalloc(sizeof(struct ack_packet));
 		ack->ackno = htonl(0); //host to network byte ordering
 		ack->len = htons(ACK_HEADER_SIZE); //host to network byte ordering
-		
+
 		//Compute checksum
 		ack->cksum = cksum((void *)ack, 12); //all packets are 12 bytes - method handles bytes ordering
-		
+
 	}
 
 	packet_t *packet;
 	packet = xmalloc(sizeof(packet_t));
 
 	int numBytes = conn_input (r->c, packet->data, MAX_DATA_SIZE);
-	
+
 	if (numBytes<=0){
 		modefree (packet);
 		return;
@@ -240,13 +304,13 @@ rel_read (rel_t *r)
 	//TODO: 3 way habndshake packet with no data first? read 0
 	//TODO: Account for states?
 	//TODO: EOF?
-*/
+	 */
 }
 
 void
 rel_output (rel_t *r)
 {
-	
+
 }
 
 void
@@ -262,7 +326,7 @@ rel_timer ()
 			//if(curr->window[i].valid && currTime - curr->window[i].)
 		}
 	}
-	
+
 }
 
 
