@@ -363,6 +363,7 @@ rel_read (rel_t *r)
 		
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
+		r->lastSeqSent = window->pkt.seqno;
 	}
 
 
