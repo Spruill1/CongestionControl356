@@ -327,12 +327,15 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		window_entry *next = current->next;
 		int next_seqno = next->pkt.seqno;
 
-		if(next_seqno == seqno && !next->valid){
+		if(next_seqno == seqno){
+			if(next->valid){
 			//Next window exists, check if valid, update if necessary
 				memcpy(&next->pkt, pkt, pkt->len);
 				clock_gettime(CLOCK_MONOTONIC,&next->sen);
 				next->valid = true;
 				return 1;
+			} else
+				return 0; //packet was already there!
 		}
 		current = current->next;
 	}
