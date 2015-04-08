@@ -83,6 +83,16 @@ rel_t *rel_list;
 
 
 
+void
+smart_add(rel_t *r, packet_t *pkt){
+	// TODO: add the packet to the window
+}
+
+void
+send_ack(rel_t *r){
+	// TODO: send an ack for the next seq expected
+}
+
 
 
 /* Creates a new reliable protocol session, returns NULL on failure.
@@ -362,7 +372,7 @@ rel_timer ()
 		while(curr_win){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
 			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec > 
-				curr->cc->(long)(timeout*(long)1000000)){
+				(curr->cc->timeout*(long)1000000)){
 				
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
@@ -373,20 +383,5 @@ rel_timer ()
 		curr = curr->next;
 	}
 
-}
-
-void
-smart_add(rel_t *r, packet_t *pkt){
-	// TODO: add the packet to the window
-}
-
-void
-flush_window(rel_t *r){
-	// TODO: conn_output what can, slide things in the window, update the next seq expected
-}
-
-void
-send_ack(rel_t *r){
-	// TODO: send an ack for the next seq expected
 }
 
