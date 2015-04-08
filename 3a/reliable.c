@@ -325,6 +325,7 @@ rel_read (rel_t *r)
 		
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
+		r->lastSeqSent = window->pkt.seqno;
 	}
 
 
@@ -356,9 +357,9 @@ rel_timer ()
 	//iterate throught the window and if an item is valid & it was transmitted > rel_t->cc->timeout milliseconds ago, then retransmit it.
 
 	rel_t *curr = rel_list;
-	while(curr->next){
+	while(curr){
 		window_entry *curr_win = rel_list->window_list;
-		while(curr_win->next){
+		while(curr_win){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
 			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec > 
 				curr->cc->(long)(timeout*(long)1000000)){
