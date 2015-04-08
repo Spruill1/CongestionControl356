@@ -275,6 +275,13 @@ void windowList_enqueue(rel_t *r, window_entry *w){
 	w->next = NULL;
 }
 
+/*
+ * Adds a packet to the receiving end window.
+ * Fills in the blanks in the window.
+ * returns -1 when the packet cannot be added
+ *          0 when the packet is redundant
+ *          1 in success
+ */
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	uint32_t seqno = pkt->seqno;
 	window_entry *w;
