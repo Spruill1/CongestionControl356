@@ -347,7 +347,7 @@ rel_read (rel_t *r)
 			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
-			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
+			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE); //TODO: I believe that the cksum should be over the whole packet, not just the header
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
@@ -370,7 +370,18 @@ rel_read (rel_t *r)
 void
 rel_output (rel_t *r)
 {
-
+	/*
+		call conn_output to output data received in UDP packets to STDOUT
+		conn_bufspace returns how much space is available for use by conn_output
+		
+		Acknowledge packets here - if we cannot fit them into the output, don't ack them
+		
+		library calls this when output has drained, at which point you can call conn_bufspace to
+			see how much buffer sapce you have and send out more Acks to get more data from the 
+			remote side 
+	*/
+	
+	
 }
 
 void
