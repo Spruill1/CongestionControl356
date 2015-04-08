@@ -46,7 +46,7 @@ typedef struct window_entry{
 	struct window_entry *prev;
 
 	packet_t pkt;
-	//struct timespec sen;
+	struct timespec sen;
 
 	bool valid;
 
@@ -64,15 +64,15 @@ struct reliable_state {
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
 
-	window_entry *window_list;
-
-	//uint32_t next_seqno;
-
+	window_entry *sending_window;
+	window_entry *receiving_window;
 
 	//Sender
 	uint32_t lastSeqAcked;
 	uint32_t lastSeqWritten;
 	uint32_t lastSeqSent;
+	uint32_t next_seqno;
+
 
 	//Receiver
 	uint32_t nextSeqExpected;
@@ -85,7 +85,7 @@ rel_t *rel_list;
 
 //Method Declarations
 int windowList_smartAdd(rel_t *r, packet_t *pkt);
-//int windowList_dequeue(rel_t *r, window_entry *w);
+window_entry* windowList_dequeue(rel_t *r, window_entry **head);
 
 /*
  * Processes Acks server side, frees up the window depending on the ack.
@@ -93,23 +93,26 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt);
  */
 void process_ack(rel_t *r, packet_t* pkt){
 	// TODO: redo this method
-/*	//check if packet is in window
-	uint32_t seqno = pkt->seqno;
-	if(seqno < r->lastSeqAcked || r->lastSeqSent<seqno){
-		printf("INFO: received ack for %d seqno, not in window %d - %d",pkt->seqno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
+	//check if packet is in window
+	uint32_t ackno = pkt->ackno;
+	if(ackno < r->lastSeqAcked || r->lastSeqSent<ackno){
+		printf("INFO: received ack for %d seqno, not in window %d - %d",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
 
 	//seqno in flush packets
-	window_entry *current = r->window_list;
-	while(current->pkt->seqno<=seqno && seqno<=r->lastSeqSent){
-		windowList_dequeue(r, current);
-		free(current);
-		current = r->window_list;
+	window_entry *current = r->sending_window;
+	while(current!=NULL && current->pkt.seqno<=ackno && ackno<=r->lastSeqSent){
+		current = windowList_dequeue(r, &r->sending_window);
+		if(current!=NULL)
+			free(current);
+		else
+			printf("we done we fucked up again\n");
+		current = r->sending_window;
 	}
 
-	r->lastSeqAcked = seqno;
+	r->lastSeqAcked = ackno-1;
 	//call rel_read
-	rel_read(r);*/
+	rel_read(r);
 }
 
 void
@@ -126,7 +129,7 @@ send_ack(rel_t *r){
 	ackPkt.len = htons(ACK_HEADER_SIZE);
 	printf("sending ack for: %i\n",r->nextSeqExpected);
 	ackPkt.ackno = htonl(r->nextSeqExpected);
-	memset (&(ackPkt.cksum),0,sizeof(ackPkt));
+    memset(&(ackPkt.cksum),0,sizeof(uint16_t));
 	ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
 
 	//send the ack
@@ -165,9 +168,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		rel_list->prev = &r->next;
 	rel_list = r;
 
-	//r->next_seqno = 1;
-
+	r->next_seqno = 1;
+	r->sending_window = NULL;
+	r->receiving_window = NULL;
 	//initialize the window
+	/*
 	r->window_list = xmalloc(sizeof(struct window_entry));
 	r->window_list->valid = false;
 	window_entry *temp_list1 = r->window_list;
@@ -180,7 +185,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		temp_list2->next = NULL;
 		temp_list1->next = temp_list2;
 		temp_list1 = temp_list2;
-	}
+	}*/
 
 	//Sender
 	r->lastSeqAcked = 0;
@@ -229,8 +234,16 @@ rel_destroy (rel_t *r)
 	conn_destroy (r->c);
 
 	/* Free any other allocated memory here */
-	// free the window
-	window_entry *temp_entry = r->window_list;
+	// free windows
+	window_entry *temp_entry = r->sending_window;
+	while(temp_entry->next != NULL){
+		//free(temp_entry->pkt);
+		temp_entry = temp_entry->next;
+		free(temp_entry->prev);
+	}
+	free(temp_entry);
+	
+	temp_entry = r->receiving_window;
 	while(temp_entry->next != NULL){
 		//free(temp_entry->pkt);
 		temp_entry = temp_entry->next;
@@ -244,7 +257,6 @@ rel_destroy (rel_t *r)
 	if(r->cc)
 		free(r->cc);
 	free(r);
-
 }
 
 
@@ -266,7 +278,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-	printf("I received a packet!\n");
+	//printf("I received a packet!\n");
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
 		return;
@@ -274,6 +286,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Check checksum
 	uint16_t received_checksum = pkt->cksum;
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
+	//printf("recvpkt - 2\n");
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
@@ -282,7 +295,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	pkt->ackno = ntohl (pkt->ackno);
 	if (pkt->len > ACK_HEADER_SIZE) pkt->seqno = ntohl(pkt->seqno);
 
-	printf("The packet wasn't corrupted!\n");
+	//printf("The packet wasn't corrupted!\n");
 	// Do some stuff with the packets
 	// Start by looking for Acks
 	if (pkt->len == ACK_HEADER_SIZE){
@@ -290,25 +303,25 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	}
 	// must be data if it's not corrupted and not an ACK
 	else {
-		printf("adding the packet to the window\n");
-		int result = windowList_smartAdd(r,pkt);
-		printf("processing the output. smart add was: %i\n",result);
+		//printf("adding the packet to the window\n");
+		windowList_smartAdd(r,pkt);
+		//printf("processing the output. smart add was: %i\n",result);
 		rel_output(r);
-		printf("sending an ACK!\n\n");
+		//printf("sending an ACK!\n\n");
 		send_ack(r);
 	}
 }
 
-/*void windowList_enqueue(rel_t *r, window_entry *w){
+void windowList_enqueue(rel_t *r, window_entry *w, window_entry **head){
 	window_entry *current;
-	if(r->window_list == NULL){
+	if(*head == NULL){
 		//window_list is null
-		r->window_list = w;
+		*head = w;
 		w->next = NULL;
 		w->prev = NULL;
 		return;
 	}
-	current = r->window_list;
+	current = *head;
 	//find end
 	while(current->next){
 		current = current->next;
@@ -316,7 +329,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	current->next = w;
 	w->prev = current;
 	w->next = NULL;
-}*/
+}
 
 /*
  * Adds a packet to the receiving end window.
@@ -326,8 +339,10 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
  *          1 in success
  */
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
+
 	uint32_t seqno = pkt->seqno;
-	struct window_entry *w = r->window_list;
+	struct window_entry *w = r->receiving_window;
+	/*
 	uint32_t window_seqno = r->nextSeqExpected;
 	printf("packet seq: %"PRIu32", and nextExpectedSeq:%"PRIu32";\n",seqno,window_seqno);
 	while(w != NULL){
@@ -352,22 +367,20 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		w = w->next;
 	}
 	return -1; //couldn't add
-
-	/*if(r->window_list){
+*/
+	if(r->receiving_window == NULL){
 		//Window list is NULL, use nextSeqExpected as reference
-		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){ //TODO: segfaults on r->cc->window
-    printf("smartAdd 2a\n");
+		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
 			//ignore packet that has already been processed or that is too far ahead
-			printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
+			//printf("INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 			return -1;
 		} else {
-    printf("smartAdd 2a\n");
 			//This is a valid seqno, add packet
 			w = (window_entry *)xmalloc(sizeof(window_entry));
 			memcpy(&w->pkt, pkt, pkt->len);
 			clock_gettime(CLOCK_MONOTONIC,&w->sen);
 			w->valid = true;
-			r->window_list = w;
+			r->receiving_window = w;
 			w->next = NULL;
 			w->prev = NULL;
 			return 1;
@@ -376,18 +389,22 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 
 	//Window_list is not null
 	//Use head to check for window size
-	uint32_t head_seqno = r->window_list->pkt.seqno;
+	uint32_t head_seqno = r->receiving_window->pkt.seqno;
 	if(seqno <= head_seqno || head_seqno+r->cc->window < seqno){
-		printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
+		printf("INFO: Package of seqno %d was not added. Already processed or far ahead\n", seqno);
 		return -1;
 	}
 
 	//Valid seqno!
 
+	int safetyvar_memleak = 0;
 	//Find and close gaps!
-	window_entry *current = r->window_list;
+	window_entry *current = r->receiving_window;
 	while(current->pkt.seqno < seqno){
 		int current_seqno = current->pkt.seqno;
+		if(safetyvar_memleak>r->cc->window+10){
+			printf("ERROR: MEMLEAK at SMARTADD!\n");
+		}
 
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
 			//Next window does not exist. Create subsequent window and insert
@@ -414,12 +431,14 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 				return 0; //packet was already there!
 		}
 		current = current->next;
+		safetyvar_memleak++;
 	}
 	printf("ERROR: Could not smart add. Not smart enough...\n");
-	return -1;*/
+	return -1;
 }
 
 void slideWindow(rel_t *r){
+	/*
 	struct window_entry *temp = r->window_list;
 	// first add another entry to the end of the list
 	while(temp->next != NULL){
@@ -440,18 +459,21 @@ void slideWindow(rel_t *r){
 	//free(r->window_list->prev);
 	printf("yuppp\n");
 	r->window_list->prev = NULL;
+	 */
+
 }
 
-/*int windowList_dequeue(rel_t *r, window_entry *w){
-	if(!r->window_list){
+window_entry* windowList_dequeue(rel_t *r, window_entry **head){
+	window_entry *w;
+	if(!*head){
 		w = NULL;
-		return -1;
+		return NULL;
 	}
-	w = r->window_list;
-	r->window_list = w->next;
-	return 1;
+	w = *head;
+	*head = w->next;
+	return w;
 
-}*/
+}
 
 void
 rel_read (rel_t *r)
@@ -486,9 +508,10 @@ rel_read (rel_t *r)
 			packet_size = PKT_HEADER_SIZE;
 			//EOF packet has no data but has seqno
 			// TODO: fix this whole fucking method
-			//packet.seqno = htonl(r->next_seqno); r->next_seqno++;
+			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
+			memset(&(packet.cksum),0,sizeof(uint16_t));
 			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
@@ -498,23 +521,32 @@ rel_read (rel_t *r)
 			//make a normal packet and add it to the window
 			packet_size = PKT_HEADER_SIZE + bytes_read;
 			// TODO: see above
-			//packet.seqno = htonl(r->next_seqno); r->next_seqno++;
+			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
-			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE); //TODO: I believe that the cksum should be over the whole packet, not just the header
+			memset(&(packet.cksum),0,sizeof(uint16_t));
+			packet.cksum=cksum((void*)&packet,packet_size); //TODO: I believe that the cksum should be over the whole packet, not just the header
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
 		}
-
-		/*//enqueue
-		//windowList_enqueue(r, window);
-		//update window parameters
-		r->lastSeqWritten = window->pkt.seqno;
+				//update window parameters
+		r->lastSeqWritten = htonl(window->pkt.seqno);
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-		r->lastSeqSent = window->pkt.seqno;*/
+
+		//Decode to host before enqueue
+		window->pkt.len = ntohs (window->pkt.len);
+		window->pkt.ackno = ntohl (window->pkt.ackno);
+		window->pkt.seqno = ntohl(window->pkt.seqno);
+
+		//enqueue
+		windowList_enqueue(r, window, &r->sending_window);
+
+		r->lastSeqSent = htonl(window->pkt.seqno);
+		window_size = r->lastSeqWritten - r->lastSeqAcked;
+
 	}
 
 
@@ -536,20 +568,20 @@ rel_output (rel_t *r)
 			remote side
 	 */
 
-	window_entry *traverse = r->window_list;
+	window_entry *traverse = r->receiving_window;
 	while(traverse != NULL) {
 		if(!traverse->valid) {break;}
 		else if(conn_bufspace(r->c) >= traverse->pkt.len - PKT_HEADER_SIZE){
 			//commit the data
 			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
 			traverse=traverse->next;
-			slideWindow(r);
+			//slideWindow(r); No need for this, smartadd already handles all cases
 			r->nextSeqExpected++; //update the next expected sequence number
 
-			/*window_entry *fetch; //slide the window - delete the newly written packet
-			if(windowList_dequeue(r,fetch) > 0){
+			window_entry *fetch = windowList_dequeue(r, &r->receiving_window); //slide the window - delete the newly written packet
+			if(fetch != NULL){
 				free(fetch);
-			} else {printf("we done fucked up\n");}*/
+			} else {printf("we done fucked up\n");}
 		}
 	}
 }
@@ -561,9 +593,9 @@ rel_timer ()
 	//iterate throught the window and if an item is valid & it was transmitted > rel_t->cc->timeout milliseconds ago, then retransmit it.
 
 	// TODO: fix this method, possibly with a different window
-	/*rel_t *curr = rel_list;
+	rel_t *curr = rel_list;
 	while(curr){
-		window_entry *curr_win = rel_list->window_list;
+		window_entry *curr_win = rel_list->sending_window;
 		while(curr_win){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
 			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec >
@@ -571,12 +603,11 @@ rel_timer ()
 
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
-				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt->len)); //send it
+				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
 			}
 			curr_win = curr_win->next;
 		}
 		curr = curr->next;
-	}*/
+	}
 
 }
-
