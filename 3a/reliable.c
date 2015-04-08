@@ -215,52 +215,14 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Do some stuff with the packets
 
 	// Start by looking for Acks
-	//TODO: verify the states stuff
 	if (pkt->len == ACK_HEADER_SIZE){
-		if (r->state == RST_WRITE){ // "WAITING_ACK"
-			if (pkt->ackno == r->lastSeqReceived + 1){
-				r->state = RST_READ; // "WAITING_INPUT_DATA"
-				rel_read(r);
-			}
-		}
-		else if (r->state == RST_LAST_ACK){ //"WAITING_EOF_ACK"
-			if (pkt->ackno == r->lastSeqReceived + 1){
-				// TODO: verify all the closing conditions.  confusion about states
-				r->state = RST_CLOSED;
-				rel_destroy(r);
-			}
-		}
+		process_ack(r,pkt);
 	}
 	// must be data if it's not corrupted and not an ACK
 	else {
-		if (pkt->seqno <= r->next_seqno){
-			// TODO: send an ACK, nvm can't send if there's no room. defer and fix
-			if (r->state == RST_READ){ // "WAITING_DATA_PACKET"
-				if (pkt->len == PKT_HEADER_SIZE){
-					r->state = RST_CLOSED; // "SERVER FINISHED"
-					conn_output(r->c,NULL,0);
-					rel_destroy(r); //TODO: pretty sure that this shouldn't go here...  
-							//	The no guarantee that all sent packets have
-							//	been acked and that all output data has been
-							//	written
-				}
-				else {
-					// Garbage placeholder from the example
-					/*save_incoming_data_packet (relState, packet);
-
-				      if (flush_payload_to_output (relState))
-				      {
-				        create_and_send_ack_packet (relState, packet->seqno + 1);
-				        relState->nextInOrderSeqNo = packet->seqno + 1;
-				      }
-				      else
-				      {
-				        relState->serverState = WAITING_TO_FLUSH_DATA;
-				      }*/
-				}
-			}
-		}
-
+		smart_add(r,pkt);
+		flush_window(r);
+		send_ack(r);
 	}
 }
 
@@ -412,4 +374,18 @@ rel_timer ()
 
 }
 
+void
+smart_add(rel_t *r, packet_t *pkt){
+	// TODO: add the packet to the window
+}
+
+void
+flush_window(rel_t *r){
+	// TODO: conn_output what can, slide things in the window, update the next seq expected
+}
+
+void
+send_ack(rel_t *r){
+	// TODO: send an ack for the next seq expected
+}
 
