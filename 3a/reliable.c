@@ -239,7 +239,10 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 				if (pkt->len == PKT_HEADER_SIZE){
 					r->state = RST_CLOSED; // "SERVER FINISHED"
 					conn_output(r->c,NULL,0);
-					rel_destroy(r);
+					rel_destroy(r); //TODO: pretty sure that this shouldn't go here...  
+							//	The no guarantee that all sent packets have
+							//	been acked and that all output data has been
+							//	written
 				}
 				else {
 					// Garbage placeholder from the example
