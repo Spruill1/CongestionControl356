@@ -120,8 +120,8 @@ send_ack(rel_t *r){
 
     //make the ack
     packet_t ackPkt;
-    ackPkt.len = ACK_HEADER_SIZE;
-    ackPkt.ackno = r->next_seqno;
+    ackPkt.len = htons(ACK_HEADER_SIZE);
+    ackPkt.ackno = htonl(r->next_seqno);
     ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
 
     //send the ack
@@ -194,7 +194,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		cc = NULL;
 	} else if(cc){
 		r->cc = xmalloc(sizeof(struct config_common));
-        printf("made it to our code 3cs\n");
+        printf("made it to our code 3c\n");
 		memcpy(r->cc,cc,sizeof(struct config_common));
 		ss = NULL;
 	} else{
@@ -254,6 +254,8 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+    printf("package received 1\n");
+
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
 		return;
@@ -264,6 +266,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
+
+    printf("package received 2\n");
 	// enforce host byte order
 	pkt->len = ntohs (pkt->len);
 	pkt->ackno = ntohl (pkt->ackno);
@@ -271,13 +275,17 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 	// Do some stuff with the packets
 
+    printf("package received 3\n");
 	// Start by looking for Acks
 	if (pkt->len == ACK_HEADER_SIZE){
+    printf("package received 4a\n");
 		process_ack(r,pkt);
 	}
 	// must be data if it's not corrupted and not an ACK
 	else {
+    printf("package received 4b\n");
 		windowList_smartAdd(r,pkt);
+    printf("package received 4ba\n");
 		rel_output(r);
 		send_ack(r);
 	}
