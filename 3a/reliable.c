@@ -65,6 +65,7 @@ struct reliable_state {
 	struct sockaddr_storage *ss;
 
 	window_entry *window_list;
+	window_entry *receiving_window;
 
 	//Sender
 	uint32_t lastSeqAcked;
@@ -269,7 +270,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-	printf("I received a packet!\n");
+	//printf("I received a packet!\n");
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
 		return;
@@ -277,7 +278,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Check checksum
 	uint16_t received_checksum = pkt->cksum;
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
-	printf("recvpkt - 2\n");
+	//printf("recvpkt - 2\n");
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
@@ -286,7 +287,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	pkt->ackno = ntohl (pkt->ackno);
 	if (pkt->len > ACK_HEADER_SIZE) pkt->seqno = ntohl(pkt->seqno);
 
-	printf("The packet wasn't corrupted!\n");
+	//printf("The packet wasn't corrupted!\n");
 	// Do some stuff with the packets
 	// Start by looking for Acks
 	if (pkt->len == ACK_HEADER_SIZE){
@@ -294,11 +295,11 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	}
 	// must be data if it's not corrupted and not an ACK
 	else {
-		printf("adding the packet to the window\n");
+		//printf("adding the packet to the window\n");
 		int result = windowList_smartAdd(r,pkt);
-		printf("processing the output. smart add was: %i\n",result);
+		//printf("processing the output. smart add was: %i\n",result);
 		rel_output(r);
-		printf("sending an ACK!\n\n");
+		//printf("sending an ACK!\n\n");
 		send_ack(r);
 	}
 }
@@ -363,7 +364,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		//Window list is NULL, use nextSeqExpected as reference
 		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
 			//ignore packet that has already been processed or that is too far ahead
-			printf("INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
+			//printf("INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 			return -1;
 		} else {
 			//This is a valid seqno, add packet
@@ -584,7 +585,7 @@ rel_timer ()
 	//iterate throught the window and if an item is valid & it was transmitted > rel_t->cc->timeout milliseconds ago, then retransmit it.
 
 	// TODO: fix this method, possibly with a different window
-	/*rel_t *curr = rel_list;
+	rel_t *curr = rel_list;
 	while(curr){
 		window_entry *curr_win = rel_list->window_list;
 		while(curr_win){
@@ -594,11 +595,11 @@ rel_timer ()
 
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
-				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt->len)); //send it
+				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
 			}
 			curr_win = curr_win->next;
 		}
 		curr = curr->next;
-	}*/
+	}
 
 }
