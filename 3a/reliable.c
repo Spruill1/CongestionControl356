@@ -138,6 +138,8 @@ rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		const struct config_common *cc)
 {
+
+    printf("made it to our code 1\n");
 	rel_t *r;
 
 	r = xmalloc (sizeof (*r));
@@ -176,23 +178,33 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->lastSeqRead = 0;
 	r->lastSeqReceived = 0;
 
+    printf("made it to our code 2\n");
+
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
 
+    printf("made it to our code 3\n");
+
 	//Allocate ss and cc, exactly one should be NULL
-	if(!ss){
+	if(ss){
 		r->ss = xmalloc(sizeof(struct sockaddr_storage));
-		memcpy(&r->ss,ss,sizeof(struct sockaddr_storage));
+        printf("made it to our code 3b\n");
+		memcpy(r->ss,ss,sizeof(struct sockaddr_storage));
 		cc = NULL;
-	} else if(!cc){
+	} else if(cc){
 		r->cc = xmalloc(sizeof(struct config_common));
-		memcpy(&r->cc,cc,sizeof(struct config_common));
+        printf("made it to our code 3cs\n");
+		memcpy(r->cc,cc,sizeof(struct config_common));
 		ss = NULL;
-	} else
+	} else{
+        printf("made it to our code 4a\n");
 		return NULL;
+    }
+
 	r->state = RST_LISTEN;
 
+    printf("made it to our code 4b\n");
 
 	return r;
 }
@@ -375,9 +387,6 @@ int windowList_dequeue(rel_t *r, window_entry *w){
 	return 1;
 
 }
-
-
-
 
 void
 rel_read (rel_t *r)
