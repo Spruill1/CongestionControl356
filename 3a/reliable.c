@@ -83,6 +83,16 @@ struct reliable_state {
 };
 rel_t *rel_list;
 
+long sumPkt(packet_t *_pkt){
+    char *pkt = _pkt->data;
+    long sum = 0;
+    int i=0;
+    for(i=0;i<ntohs(_pkt->len)-PKT_HEADER_SIZE;i++){
+        sum+=(long)pkt[i];
+    }
+    //printf("Pkt_sum = %ld\n",sum);
+}
+
 //Method Declarations
 int windowList_smartAdd(rel_t *r, packet_t *pkt);
 window_entry* windowList_dequeue(rel_t *r, window_entry **head);
@@ -241,7 +251,7 @@ rel_destroy (rel_t *r)
 		free(temp_entry->prev);
 	}
 	free(temp_entry);
-	
+
 	temp_entry = r->receiving_window;
 	while(temp_entry->next != NULL){
 		//free(temp_entry->pkt);
@@ -480,6 +490,7 @@ rel_read (rel_t *r)
 	int bytes_read = 0;
 	int window_size = r->lastSeqWritten - r->lastSeqAcked;
 	packet_t packet;
+    memset(&(packet.data),0,MAX_DATA_SIZE);
 	uint32_t packet_size = 0;
 
 	while(1){
@@ -535,6 +546,8 @@ rel_read (rel_t *r)
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
 
+		sumPkt(&window->pkt);
+
 		//Decode to host before enqueue
 		window->pkt.len = ntohs (window->pkt.len);
 		window->pkt.ackno = ntohl (window->pkt.ackno);
@@ -573,6 +586,9 @@ rel_output (rel_t *r)
 		else if(conn_bufspace(r->c) >= traverse->pkt.len - PKT_HEADER_SIZE){
 			//commit the data
 			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
+
+			sumPkt(&traverse->pkt);
+
 			traverse=traverse->next;
 			//slideWindow(r); No need for this, smartadd already handles all cases
 			r->nextSeqExpected++; //update the next expected sequence number
