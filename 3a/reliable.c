@@ -91,6 +91,20 @@ smart_add(rel_t *r, packet_t *pkt){
 void
 send_ack(rel_t *r){
 	// TODO: send an ack for the next seq expected
+
+	/*
+        Coming into this method the next sequence number expected should have been updated to
+        the first sequence number which we were unable to shift the window past.
+	*/
+
+    //make the ack
+    packet_t ackPkt;
+    ackPkt.len = ACK_HEADER_SIZE;
+    ackPkt.ackno = r->next_seqno;
+    ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
+
+    //send the ack
+    conn_sendpkt(r->c, &ackPkt, ACK_HEADER_SIZE);
 }
 
 
