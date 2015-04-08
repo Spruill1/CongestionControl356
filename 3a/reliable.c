@@ -81,8 +81,33 @@ struct reliable_state {
 };
 rel_t *rel_list;
 
+//Method Declarations
+int windowList_smartAdd(rel_t *r, packet_t *pkt);
+int windowList_dequeue(rel_t *r, window_entry *w);
 
-
+/*
+ * Processes Acks server side, frees up the window depending on the ack.
+ * Ignores Acks not in window. Updates lastSeqAcked.
+ */
+void process_ack(rel_t *r, packet_t* pkt){
+	//check if packet is in window
+	uint32_t seqno = pkt->seqno;
+	if(seqno < r->lastSeqAcked || r->lastSeqSent<seqno){
+		printf("INFO: received ack for %d seqno, not in window %d - %d",pkt->seqno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
+	}
+	
+	//seqno in flush packets
+	window_entry *current = r->window_list;
+	while(current->pkt.seqno<=seqno && seqno<=r->lastSeqSent){
+		windowList_dequeue(r, current);
+		free(current);
+		current = r->window_list;
+	}
+	
+	r->lastSeqAcked = seqno;
+	//call rel_read
+	rel_read(r);
+}
 
 void
 send_ack(rel_t *r){
@@ -240,8 +265,8 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	}
 	// must be data if it's not corrupted and not an ACK
 	else {
-		smart_add(r,pkt);
-		flush_window(r);
+		windowList_smartAdd(r,pkt);
+		rel_output(r);
 		send_ack(r);
 	}
 }
