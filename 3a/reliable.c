@@ -293,7 +293,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 void windowList_enqueue(rel_t *r, window_entry *w){
 	window_entry *current;
-	if(r->window_list){
+	if(r->window_list == NULL){
 		//window_list is null
 		r->window_list = w;
 		w->next = NULL;
@@ -415,7 +415,7 @@ rel_read (rel_t *r)
 		} else if (window_size == r->cc->window){
 			//Window is full!
 			return;
-		}else if(!(bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
+		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
 			return;
 		} else if(bytes_read<0 && errno==EIO){
