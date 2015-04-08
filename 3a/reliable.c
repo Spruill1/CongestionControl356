@@ -124,11 +124,13 @@ send_ack(rel_t *r){
 	//make the ack
 	packet_t ackPkt;
 	ackPkt.len = htons(ACK_HEADER_SIZE);
+	printf("sending ack for: %i\n",r->nextSeqExpected);
 	ackPkt.ackno = htonl(r->nextSeqExpected);
+	memset (&(ackPkt.cksum),0,sizeof(ackPkt));
 	ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
 
 	//send the ack
-	conn_sendpkt(r->c, &ackPkt, ACK_HEADER_SIZE);
+	conn_sendpkt(r->c, &ackPkt,(size_t) ACK_HEADER_SIZE);
 }
 
 
