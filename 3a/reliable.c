@@ -320,14 +320,17 @@ void windowList_enqueue(rel_t *r, window_entry *w){
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	uint32_t seqno = pkt->seqno;
 	window_entry *w;
+    printf("smartAdd 1\n");
 
 	if(r->window_list){
 		//Window list is NULL, use nextSeqExpected as reference
-		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
+		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){ //TODO: segfaults on r->cc->window
+    printf("smartAdd 2a\n");
 			//ignore packet that has already been processed or that is too far ahead
 			printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
 			return -1;
 		} else {
+    printf("smartAdd 2a\n");
 			//This is a valid seqno, add packet
 			w = (window_entry *)xmalloc(sizeof(window_entry));
 			memcpy(&w->pkt, pkt, pkt->len);
