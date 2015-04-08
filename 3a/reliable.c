@@ -45,7 +45,7 @@ typedef struct window_entry{
 	struct window_entry *next;			/* Linked list for traversing all windows */
 	struct window_entry *prev;
 
-	packet_t *pkt;
+	packet_t pkt;
 	//struct timespec sen;
 
 	bool valid;
@@ -230,7 +230,7 @@ rel_destroy (rel_t *r)
 	// free the window
 	window_entry *temp_entry = r->window_list;
 	while(temp_entry->next != NULL){
-		free(temp_entry->pkt);
+		//free(temp_entry->pkt);
 		temp_entry = temp_entry->next;
 		free(temp_entry->prev);
 	}
@@ -333,9 +333,11 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			if (w->valid == 1){
 				return 0; //already there and valid
 			}
-			w->pkt = xmalloc(pkt->len);
+			printf("pkt->len: %i\n",pkt->len);
+			//w->pkt = xmalloc(pkt->len);
 			memcpy(&(w->pkt),pkt,pkt->len);
 			w->valid = 1;
+			printf("w->pkt.len: %i\n",w->pkt.len);
 			return 1; //packet added at the right spot
 		}
 		window_seqno++;
@@ -535,9 +537,9 @@ rel_output (rel_t *r)
 	window_entry *traverse = r->window_list;
 	while(traverse != NULL) {
 		if(!traverse->valid) {break;}
-		else if(conn_bufspace(r->c) >= traverse->pkt->len - PKT_HEADER_SIZE){
+		else if(conn_bufspace(r->c) >= traverse->pkt.len - PKT_HEADER_SIZE){
 			//commit the data
-			conn_output(r->c,(void*)(traverse->pkt->data),traverse->pkt->len - PKT_HEADER_SIZE);
+			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
 			traverse=traverse->next;
 			slideWindow(r);
 			r->nextSeqExpected++; //update the next expected sequence number
