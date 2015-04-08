@@ -395,10 +395,19 @@ rel_timer ()
 
 	rel_t *curr = rel_list;
 	while(curr->next){
-		for(int i = 0; i < curr->cc->window; i++){
+		window_entry *curr_win = rel_list->window_list;
+		while(curr_win->next){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
-			//if(curr->window[i].valid && currTime - curr->window[i].)
+			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec > 
+				curr->cc->(long)(timeout*(long)1000000)){
+				
+				//the packet is still valid (unacked) and has timed-out, retransmit
+				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
+				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
+			}
+			curr_win = curr_win->next;
 		}
+		curr = curr->next;
 	}
 
 }
