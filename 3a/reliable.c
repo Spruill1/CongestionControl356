@@ -100,7 +100,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 
 	//seqno in flush packets
 	window_entry *current = r->window_list;
-	while(current->pkt.seqno<=ackno && ackno<=r->lastSeqSent){
+	while(current!=NULL && current->pkt.seqno<=ackno && ackno<=r->lastSeqSent){
 		current = windowList_dequeue(r);
 		if(current!=NULL)
 			free(current);
@@ -109,7 +109,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 		current = r->window_list;
 	}
 
-	r->lastSeqAcked = ackno;
+	r->lastSeqAcked = ackno-1;
 	//call rel_read
 	rel_read(r);
 }
@@ -517,14 +517,20 @@ rel_read (rel_t *r)
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
 		}
-
-		//enqueue
-		windowList_enqueue(r, window);
-		//update window parameters
+				//update window parameters
 		r->lastSeqWritten = htonl(window->pkt.seqno);
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
+		
+		//Decode to host before enqueue
+		window->pkt.len = ntohs (window->pkt.len);
+		window->pkt.ackno = ntohl (window->pkt.ackno);
+		window->pkt.seqno = ntohl(window->pkt.seqno);
+	
+		//enqueue
+		windowList_enqueue(r, window);
+
 		r->lastSeqSent = htonl(window->pkt.seqno);
 		window_size = r->lastSeqWritten - r->lastSeqAcked;
 
@@ -592,4 +598,3 @@ rel_timer ()
 	}*/
 
 }
-
