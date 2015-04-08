@@ -127,6 +127,7 @@ send_ack(rel_t *r){
 	packet_t ackPkt;
 	ackPkt.len = htons(ACK_HEADER_SIZE);
 	ackPkt.ackno = htonl(r->nextSeqExpected);
+    memset(&(ackPkt.cksum),0,sizeof(uint16_t));
 	ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
 
 	//send the ack
@@ -276,6 +277,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Check checksum
 	uint16_t received_checksum = pkt->cksum;
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
+	printf("recvpkt - 2\n");
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
@@ -328,7 +330,7 @@ void windowList_enqueue(rel_t *r, window_entry *w){
  *          1 in success
  */
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
-	
+
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->window_list;
 	/*
@@ -449,7 +451,7 @@ void slideWindow(rel_t *r){
 	printf("yuppp\n");
 	r->window_list->prev = NULL;
 	 */
-	
+
 }
 
 window_entry* windowList_dequeue(rel_t *r){
@@ -500,6 +502,7 @@ rel_read (rel_t *r)
 			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
+			memset(&(packet.cksum),0,sizeof(uint16_t));
 			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
@@ -512,6 +515,7 @@ rel_read (rel_t *r)
 			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
+			memset(&(packet.cksum),0,sizeof(uint16_t));
 			packet.cksum=cksum((void*)&packet,packet_size); //TODO: I believe that the cksum should be over the whole packet, not just the header
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
@@ -522,12 +526,12 @@ rel_read (rel_t *r)
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-		
+
 		//Decode to host before enqueue
 		window->pkt.len = ntohs (window->pkt.len);
 		window->pkt.ackno = ntohl (window->pkt.ackno);
 		window->pkt.seqno = ntohl(window->pkt.seqno);
-	
+
 		//enqueue
 		windowList_enqueue(r, window);
 
