@@ -299,7 +299,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 
 /*void windowList_enqueue(rel_t *r, window_entry *w){
 	window_entry *current;
-	if(r->window_list){
+	if(r->window_list == NULL){
 		//window_list is null
 		r->window_list = w;
 		w->next = NULL;
@@ -351,11 +351,13 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 
 	/*if(r->window_list){
 		//Window list is NULL, use nextSeqExpected as reference
-		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
+		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){ //TODO: segfaults on r->cc->window
+    printf("smartAdd 2a\n");
 			//ignore packet that has already been processed or that is too far ahead
 			printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
 			return -1;
 		} else {
+    printf("smartAdd 2a\n");
 			//This is a valid seqno, add packet
 			w = (window_entry *)xmalloc(sizeof(window_entry));
 			memcpy(&w->pkt, pkt, pkt->len);
@@ -463,7 +465,7 @@ rel_read (rel_t *r)
 		} else if (window_size == r->cc->window){
 			//Window is full!
 			return;
-		}else if(!(bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
+		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
 			return;
 		} else if(bytes_read<0 && errno==EIO){
