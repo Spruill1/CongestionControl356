@@ -42,13 +42,13 @@
 typedef struct window_entry{
 	struct window_entry *next;			/* Linked list for traversing all windows */
 	struct window_entry *prev;
-	
+
 	packet_t pkt;
 	struct timespec sen;
-	
+
 	bool valid;
-	
-	
+
+
 }window_entry;
 
 struct reliable_state {
@@ -63,15 +63,15 @@ struct reliable_state {
 	struct sockaddr_storage *ss;
 
 	window_entry *window_list;
-	
+
 	uint32_t next_seqno;
-	
-	
+
+
 	//Sender
 	uint32_t lastSeqAcked;
 	uint32_t lastSeqWritten;
 	uint32_t lastSeqSent;
-	
+
 	//Receiver
 	uint32_t nextSeqExpected;
 	uint32_t lastSeqRead;
@@ -126,16 +126,16 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	//r->window = (window_entry*)xmalloc(sizeof(window_entry)*cc->window);
 	//for(int i=0;i<cc->window;i++){r->window[i].valid=false;}
 	r->window_list = NULL;
-	
+
 	if (rel_list)
 		rel_list->prev = &r->next;
 	rel_list = r;
-	
+
 	//Sender
 	r->lastSeqAcked = 0;
 	r->lastSeqWritten = 0;
 	r->lastSeqSent = 0;
-	
+
 	//Receiver
 	r->nextSeqExpected = 0;
 	r->lastSeqRead = 0;
@@ -157,7 +157,7 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	} else
 		return NULL;
 	r->state = RST_LISTEN;
-	
+
 
 	return r;
 }
@@ -273,7 +273,7 @@ int windowList_dequeue(rel_t *r, window_entry *w){
 	w = r->window_list;
 	r->window_list = w->next;
 	return 1;
-	
+
 }
 
 void
@@ -304,7 +304,7 @@ rel_read (rel_t *r)
 		}
 		//Valid packet
 		window_entry *window = (window_entry *)xmalloc(sizeof(window_entry));
-		
+
 		if(bytes_read<0) { // EOF reached
 			packet_size = PKT_HEADER_SIZE;
 			//EOF packet has no data but has seqno
@@ -327,12 +327,12 @@ rel_read (rel_t *r)
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
 		}
-		
+
 		//enqueue
 		windowList_enqueue(r, window);
 		//update window parameters
 		r->lastSeqWritten = window->pkt.seqno;
-		
+
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
 		r->lastSeqSent = window->pkt.seqno;
@@ -349,15 +349,31 @@ rel_output (rel_t *r)
 	/*
 		call conn_output to output data received in UDP packets to STDOUT
 		conn_bufspace returns how much space is available for use by conn_output
-		
+
 		Acknowledge packets here - if we cannot fit them into the output, don't ack them
-		
+
 		library calls this when output has drained, at which point you can call conn_bufspace to
-			see how much buffer sapce you have and send out more Acks to get more data from the 
-			remote side 
+			see how much buffer sapce you have and send out more Acks to get more data from the
+			remote side
 	*/
-	
-	
+
+	window_entry *traverse = r->window_list;
+	while(traverse) {
+        if(!traverse->valid) {break;}
+        else if(conn_bufspace(r->c) >= traverse->pkt.len - PKT_HEADER_SIZE){
+            //commit the data
+            conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
+
+            traverse=traverse->next;
+
+            r->next_seqno = transverse->pkt.seqno+1; //update the next expected sequence number
+
+            window_entry *fetch; //slide the window - delete the newly written packet
+            if(windowList_dequeue(r,w) > 0){
+                free(w);
+            } else {printf("we done fucked up\n");}
+        }
+	}
 }
 
 void
@@ -371,9 +387,9 @@ rel_timer ()
 		window_entry *curr_win = rel_list->window_list;
 		while(curr_win){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
-			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec > 
+			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec >
 				(curr->cc->timeout*(long)1000000)){
-				
+
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
 				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
