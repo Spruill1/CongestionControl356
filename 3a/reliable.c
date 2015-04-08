@@ -499,20 +499,20 @@ rel_read (rel_t *r)
 			//packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
-			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE); //TODO: I believe that the cksum should be over the whole packet, not just the header
+			packet.cksum=cksum((void*)&packet,packet_size); //TODO: I believe that the cksum should be over the whole packet, not just the header
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
 		}
 
-		/*//enqueue
+		//enqueue
 		//windowList_enqueue(r, window);
 		//update window parameters
 		r->lastSeqWritten = window->pkt.seqno;
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-		r->lastSeqSent = window->pkt.seqno;*/
+		r->lastSeqSent = window->pkt.seqno;
 	}
 
 
