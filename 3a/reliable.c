@@ -285,7 +285,7 @@ void windowList_enqueue(rel_t *r, window_entry *w){
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	uint32_t seqno = pkt->seqno;
 	window_entry *w;
-	
+
 	if(r->window_list){
 		//Window list is NULL, use nextSeqExpected as reference
 		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
@@ -304,7 +304,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			return 1;
 		}
 	}
-	
+
 	//Window_list is not null
 	//Use head to check for window size
 	uint32_t head_seqno = r->window_list->pkt.seqno;
@@ -312,14 +312,14 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
 		return -1;
 	}
-	
+
 	//Valid seqno!
-	
+
 	//Find and close gaps!
 	window_entry *current = r->window_list;
 	while(current->pkt.seqno < seqno){
 		int current_seqno = current->pkt.seqno;
-		
+
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
 			//Next window does not exist. Create subsequent window and insert
 			w = (window_entry *)xmalloc(sizeof(window_entry));
@@ -329,7 +329,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			w->prev = current;
 			continue;
 		}
-		
+
 		//next sequential window must exist.
 		window_entry *next = current->next;
 		int next_seqno = next->pkt.seqno;
@@ -454,11 +454,11 @@ rel_output (rel_t *r)
 
             traverse=traverse->next;
 
-            r->next_seqno = transverse->pkt.seqno+1; //update the next expected sequence number
+            r->next_seqno = traverse->pkt.seqno+1; //update the next expected sequence number
 
             window_entry *fetch; //slide the window - delete the newly written packet
-            if(windowList_dequeue(r,w) > 0){
-                free(w);
+            if(windowList_dequeue(r,fetch) > 0){
+                free(fetch);
             } else {printf("we done fucked up\n");}
         }
 	}
