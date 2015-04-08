@@ -83,10 +83,6 @@ rel_t *rel_list;
 
 
 
-void
-smart_add(rel_t *r, packet_t *pkt){
-	// TODO: add the packet to the window
-}
 
 void
 send_ack(rel_t *r){
@@ -279,6 +275,71 @@ void windowList_enqueue(rel_t *r, window_entry *w){
 	w->next = NULL;
 }
 
+int windowList_smartAdd(rel_t *r, packet_t *pkt){
+	uint32_t seqno = pkt->seqno;
+	window_entry *w;
+	
+	if(r->window_list){
+		//Window list is NULL, use nextSeqExpected as reference
+		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
+			//ignore packet that has already been processed or that is too far ahead
+			printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
+			return -1;
+		} else {
+			//This is a valid seqno, add packet
+			w = (window_entry *)xmalloc(sizeof(window_entry));
+			memcpy(&w->pkt, pkt, pkt->len);
+			clock_gettime(CLOCK_MONOTONIC,&w->sen);
+			w->valid = true;
+			r->window_list = w;
+			w->next = NULL;
+			w->prev = NULL;
+			return 1;
+		}
+	}
+	
+	//Window_list is not null
+	//Use head to check for window size
+	uint32_t head_seqno = r->window_list->pkt.seqno;
+	if(seqno <= head_seqno || head_seqno+r->cc->window < seqno){
+		printf("INFO: Package of seqno %d was not added. Already processed or far ahead", seqno);
+		return -1;
+	}
+	
+	//Valid seqno!
+	
+	//Find and close gaps!
+	window_entry *current = r->window_list;
+	while(current->pkt.seqno < seqno){
+		int current_seqno = current->pkt.seqno;
+		
+		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
+			//Next window does not exist. Create subsequent window and insert
+			w = (window_entry *)xmalloc(sizeof(window_entry));
+			w->pkt.seqno = current_seqno + 1;
+			w->valid = false;
+			w->next = current->next;
+			w->prev = current;
+			continue;
+		}
+		
+		//next sequential window must exist.
+		window_entry *next = current->next;
+		int next_seqno = next->pkt.seqno;
+
+		if(next_seqno == seqno && !next->valid){
+			//Next window exists, check if valid, update if necessary
+				memcpy(&next->pkt, pkt, pkt->len);
+				clock_gettime(CLOCK_MONOTONIC,&next->sen);
+				next->valid = true;
+				return 1;
+		}
+		current = current->next;
+	}
+	printf("ERROR: Could not smart add. Not smart enough...\n");
+	return -1;
+}
+
 int windowList_dequeue(rel_t *r, window_entry *w){
 	if(!r->window_list){
 		w = NULL;
@@ -289,6 +350,9 @@ int windowList_dequeue(rel_t *r, window_entry *w){
 	return 1;
 
 }
+
+
+
 
 void
 rel_read (rel_t *r)
