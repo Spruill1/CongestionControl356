@@ -95,7 +95,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 	if(seqno < r->lastSeqAcked || r->lastSeqSent<seqno){
 		printf("INFO: received ack for %d seqno, not in window %d - %d",pkt->seqno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
-	
+
 	//seqno in flush packets
 	window_entry *current = r->window_list;
 	while(current->pkt.seqno<=seqno && seqno<=r->lastSeqSent){
@@ -103,7 +103,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 		free(current);
 		current = r->window_list;
 	}
-	
+
 	r->lastSeqAcked = seqno;
 	//call rel_read
 	rel_read(r);
@@ -269,16 +269,6 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 		rel_output(r);
 		send_ack(r);
 	}
-}
-
-/*
-  determine the first available window index to place this packet, -1 if none is available
- */
-int windowIndex(rel_t *r){
-	for(int i = 0; i < r->cc->window; i++){
-		//if(!r->window[i].valid) return i;
-	}
-	return -1;
 }
 
 void windowList_enqueue(rel_t *r, window_entry *w){
