@@ -72,26 +72,19 @@ struct reliable_state {
 	uint32_t lastSeqWritten;
 	uint32_t lastSeqSent;
 	uint32_t next_seqno;
-
+	bool sent_EOF;  //have we sent an EOF packet?
+	bool sender_finished;
 
 	//Receiver
 	uint32_t nextSeqExpected;
 	uint32_t lastSeqRead;
 	uint32_t lastSeqReceived;
+	bool got_EOF;  //have we received an EOF packet?
+	bool receiver_finished;
 
 	//int state;
 };
 rel_t *rel_list;
-
-long sumPkt(packet_t *_pkt){
-    char *pkt = _pkt->data;
-    long sum = 0;
-    int i=0;
-    for(i=0;i<ntohs(_pkt->len)-PKT_HEADER_SIZE;i++){
-        sum+=(long)pkt[i];
-    }
-    //printf("Pkt_sum = %ld\n",sum);
-}
 
 //Method Declarations
 int windowList_smartAdd(rel_t *r, packet_t *pkt);
@@ -116,9 +109,16 @@ void process_ack(rel_t *r, packet_t* pkt){
 		if(current!=NULL)
 			free(current);
 		else
-			printf("we done we fucked up again\n");
+			printf("we done fucked up again\n");
 		current = r->sending_window;
 	}
+
+    if(r->sending_window==NULL && r->sent_EOF){
+        //sent an EOF packet and everything has been ACKed.
+        r->sender_finished = true;
+
+        if(r->receiver_finished) rel_destroy(r);
+    }
 
 	r->lastSeqAcked = ackno-1;
 	//call rel_read
@@ -315,6 +315,16 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 		//printf("adding the packet to the window\n");
 		int result = windowList_smartAdd(r,pkt);
 		//printf("processing the output. smart add was: %i\n",result);
+
+		//was the pkt an EOF?
+        if(pkt->len==PKT_HEADER_SIZE && result>0){
+            //received an EOF packet
+            r->got_EOF = true;
+            r->receiver_finished=true;
+
+            if(r->sender_finished) rel_destroy(r);
+        }
+
 		rel_output(r);
 		//printf("sending an ACK!\n\n");
 		send_ack(r);
@@ -392,6 +402,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			r->receiving_window = w;
 			w->next = NULL;
 			w->prev = NULL;
+
 			return 1;
 		}
 	}
@@ -435,6 +446,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 				memcpy(&next->pkt, pkt, pkt->len);
 				clock_gettime(CLOCK_MONOTONIC,&next->sen);
 				next->valid = true;
+
 				return 1;
 			} else
 				return 0; //packet was already there!
@@ -504,9 +516,10 @@ rel_read (rel_t *r)
 		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
 			return;
-		} else if(bytes_read<0 && errno==EIO){
+		} /*else if(bytes_read<0 && errno==EIO){
 			perror("Conn_input failed due to IO error:");
-		} /*else if(!r->state==RST_ESTABLISHED){
+
+		} */ /*else if(!r->state==RST_ESTABLISHED){
 			//No established connection yet!
 			printf("Connection not yet established!\n");
 			return;
@@ -526,6 +539,8 @@ rel_read (rel_t *r)
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
+
+			r->sent_EOF = true;
 		}
 		else {
 			//make a normal packet and add it to the window
@@ -545,8 +560,6 @@ rel_read (rel_t *r)
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-
-		sumPkt(&window->pkt);
 
 		//Decode to host before enqueue
 		window->pkt.len = ntohs (window->pkt.len);
@@ -587,8 +600,6 @@ rel_output (rel_t *r)
 			//commit the data
 			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
 
-			sumPkt(&traverse->pkt);
-
 			traverse=traverse->next;
 			//slideWindow(r); No need for this, smartadd already handles all cases
 			r->nextSeqExpected++; //update the next expected sequence number
@@ -599,6 +610,9 @@ rel_output (rel_t *r)
 			} else {printf("we done fucked up\n");}
 		}
 	}
+
+	//if there is nothing more in the receiving window and we have received an EOF packet, destroy
+    //if(r->receiving_window==NULL && r->got_EOF) rel_destroy(r);
 }
 
 void
