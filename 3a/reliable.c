@@ -49,7 +49,7 @@ typedef struct window_entry{
 	struct timespec sen;
 	
 	bool valid;
-	
+	int timeout;
 	
 }window_entry;
 
@@ -577,9 +577,16 @@ rel_timer ()
 
 			if(curr_win->valid && diffTime.tv_nsec >  (curr->cc->timeout*(unsigned long)1000)){
 				fprintf(stderr, "TIMEOUT! %d\n", curr_win->pkt.seqno);
+				packet_t packet;
+				
+				memcpy(&packet, &curr_win->pkt, sizeof(packet_t));
+				packet.len = htons(packet.len);
+				packet.seqno = htonl(packet.seqno);
+				packet.ackno = htonl(packet.ackno);
+				
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
-				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
+				conn_sendpkt(curr->c, &packet, curr_win->pkt.len); //send it
 			}
 			curr_win = curr_win->next;
 		}
