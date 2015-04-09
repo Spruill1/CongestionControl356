@@ -39,34 +39,34 @@
 #define MAX_DATA_SIZE		500
 
 /*
-     This struct will keep track of packets in our sending/receiving windows
+ This struct will keep track of packets in our sending/receiving windows
  */
 typedef struct window_entry{
 	struct window_entry *next;			/* Linked list for traversing all windows */
 	struct window_entry *prev;
-
+	
 	packet_t pkt;
 	struct timespec sen;
-
+	
 	bool valid;
-
-
+	
+	
 }window_entry;
 
 struct reliable_state {
 	rel_t *next;			/* Linked list for traversing all connections */
 	rel_t **prev;
-
+	
 	conn_t *c;			/* This is the connection object */
-
+	
 	/* Add your own data fields below this */
 	struct timespec start_time;
 	struct config_common *cc;
 	struct sockaddr_storage *ss;
-
+	
 	window_entry *sending_window;
 	window_entry *receiving_window;
-
+	
 	//Sender
 	uint32_t lastSeqAcked;
 	uint32_t lastSeqWritten;
@@ -74,14 +74,14 @@ struct reliable_state {
 	uint32_t next_seqno;
 	bool sent_EOF;  //have we sent an EOF packet?
 	bool sender_finished;
-
+	
 	//Receiver
 	uint32_t nextSeqExpected;
 	uint32_t lastSeqRead;
 	uint32_t lastSeqReceived;
 	bool got_EOF;  //have we received an EOF packet?
 	bool receiver_finished;
-
+	
 	int state;
 };
 rel_t *rel_list;
@@ -105,7 +105,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 	if(ackno < r->lastSeqAcked || r->lastSeqSent<ackno){
 		fprintf(stderr, "INFO: received ack for %d seqno, not in window %d - %d\n",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
-
+	
 	//seqno in flush packets
 	window_entry *current = r->sending_window;
 	while(current!=NULL && current->pkt.seqno<=ackno && ackno<=r->lastSeqSent){
@@ -116,14 +116,14 @@ void process_ack(rel_t *r, packet_t* pkt){
 			printf("we done fucked up again\n");
 		current = r->sending_window;
 	}
-
-    if(r->sending_window==NULL && r->sent_EOF){
-        //sent an EOF packet and everything has been ACKed.
-        r->sender_finished = true;
-        if(r->receiver_finished) rel_destroy(r);
+	
+	if(r->sending_window==NULL && r->sent_EOF){
+		//sent an EOF packet and everything has been ACKed.
+		r->sender_finished = true;
+		if(r->receiver_finished) rel_destroy(r);
 		return;
-    }
-
+	}
+	
 	r->lastSeqAcked = ackno-1;
 	
 	//call rel_read
@@ -133,19 +133,19 @@ void process_ack(rel_t *r, packet_t* pkt){
 void
 send_ack(rel_t *r){
 	// TODO: send an ack for the next seq expected
-
+	
 	/*
-        Coming into this method the next sequence number expected should have been updated to
-        the first sequence number which we were unable to shift the window past.
+	 Coming into this method the next sequence number expected should have been updated to
+	 the first sequence number which we were unable to shift the window past.
 	 */
-
+	
 	//make the ack
 	packet_t ackPkt;
 	ackPkt.len = htons(ACK_HEADER_SIZE);
 	ackPkt.ackno = htonl(r->nextSeqExpected);
-    memset(&(ackPkt.cksum),0,sizeof(uint16_t));
+	memset(&(ackPkt.cksum),0,sizeof(uint16_t));
 	ackPkt.cksum = cksum((void*)(&ackPkt),ACK_HEADER_SIZE);
-
+	
 	//send the ack
 	conn_sendpkt(r->c, &ackPkt, ACK_HEADER_SIZE);
 }
@@ -158,14 +158,14 @@ send_ack(rel_t *r){
  * rel_demux.) */
 rel_t *
 rel_create (conn_t *c, const struct sockaddr_storage *ss,
-		const struct config_common *cc)
+			const struct config_common *cc)
 {
-
+	
 	rel_t *r;
-
+	
 	r = xmalloc (sizeof (*r));
 	memset (r, 0, sizeof (*r));
-
+	
 	if (!c) {
 		c = conn_create (r, ss);
 		if (!c) {
@@ -173,15 +173,15 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 			return NULL;
 		}
 	}
-
+	
 	r->c = c;
 	r->next = rel_list;
 	r->prev = &rel_list;
-
+	
 	if (rel_list)
 		rel_list->prev = &r->next;
 	rel_list = r;
-
+	
 	r->next_seqno = 1;
 	
 	//Initialize the window
@@ -192,16 +192,16 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->lastSeqAcked = 0;
 	r->lastSeqWritten = 0;
 	r->lastSeqSent = 0;
-
+	
 	//Receiver
 	r->nextSeqExpected = 1;
 	r->lastSeqRead = 0;
 	r->lastSeqReceived = 0;
-
+	
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
-
+	
 	//Allocate ss and cc, exactly one should be NULL
 	if(ss){
 		r->ss = xmalloc(sizeof(struct sockaddr_storage));
@@ -214,10 +214,10 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	} else{
 		return NULL;
 	}
-
+	
 	r->state = RST_LISTEN;
 	
-
+	
 	return r;
 }
 
@@ -228,13 +228,13 @@ rel_destroy (rel_t *r)
 	if (r->next)
 		r->next->prev = r->prev;
 	*r->prev = r->next;
-
+	
 	struct timespec end_time;
 	clock_gettime(CLOCK_MONOTONIC,&end_time);
 	fprintf(stderr, "File transfer was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
-
+	
 	conn_destroy (r->c);
-
+	
 	/* Free any other allocated memory here */
 	// free windows
 	window_entry *temp_entry = r->sending_window;
@@ -244,7 +244,7 @@ rel_destroy (rel_t *r)
 		free(temp_entry->prev);
 	}
 	free(temp_entry);
-
+	
 	temp_entry = r->receiving_window;
 	while(temp_entry->next != NULL){
 		//free(temp_entry->pkt);
@@ -252,7 +252,7 @@ rel_destroy (rel_t *r)
 		free(temp_entry->prev);
 	}
 	free(temp_entry);
-
+	
 	//Don't worry about the connection, rlib frees the connection pointer.
 	if(r->ss)
 		free(r->ss);
@@ -272,8 +272,8 @@ rel_destroy (rel_t *r)
  */
 void
 rel_demux (const struct config_common *cc,
-		const struct sockaddr_storage *ss,
-		packet_t *pkt, size_t len)
+		   const struct sockaddr_storage *ss,
+		   packet_t *pkt, size_t len)
 {
 }
 
@@ -288,7 +288,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Check checksum
 	uint16_t received_checksum = pkt->cksum;
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
-
+	
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
@@ -313,18 +313,6 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// must be data if it's not corrupted and not an ACK
 	else {
 		int result = windowList_smartAdd(r,pkt);
-		//TODO: CHECK BEFORE
-		//was the pkt an EOF?
-        if(pkt->len==PKT_HEADER_SIZE && result>0){
-            //received an EOF packet
-            r->got_EOF = true;
-            r->receiver_finished=true;
-			r->nextSeqExpected = pkt->ackno-1;
-           	send_ack(r);
-			if(r->sender_finished) rel_destroy(r);
-			return;
-        }
-
 		rel_output(r);
 		send_ack(r);
 	}
@@ -357,7 +345,7 @@ void windowList_enqueue(rel_t *r, window_entry *w, window_entry **head){
  *          1 in success
  */
 int windowList_smartAdd(rel_t *r, packet_t *pkt){
-
+	
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->receiving_window;
 	
@@ -379,7 +367,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			return 1;
 		}
 	}
-
+	
 	//Window_list is not null
 	//Use head to check for window size
 	uint32_t head_seqno = r->receiving_window->pkt.seqno;
@@ -387,7 +375,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		fprintf(stderr,"INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 		return -1;
 	}
-
+	
 	//Valid seqno!
 	int safetyvar_memleak = 0;
 	//Find and close gaps!
@@ -397,7 +385,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		if(safetyvar_memleak>r->cc->window+10){
 			fprintf(stderr, "ERROR: MEMLEAK at SMARTADD!\n");
 		}
-
+		
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
 			//Next window does not exist. Create subsequent window and insert
 			w = (window_entry *)xmalloc(sizeof(window_entry));
@@ -409,11 +397,11 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			current->next = w;
 			continue;
 		}
-
+		
 		//next sequential window must exist.
 		window_entry *next = current->next;
 		int next_seqno = next->pkt.seqno;
-
+		
 		if(next_seqno == seqno){
 			if(!next->valid){
 				//Next window exists, check if valid, update if necessary
@@ -447,7 +435,7 @@ window_entry* windowList_dequeue(rel_t *r, window_entry **head){
 	w = *head;
 	*head = w->next;
 	return w;
-
+	
 }
 
 void
@@ -456,9 +444,9 @@ rel_read (rel_t *r)
 	int bytes_read = 0;
 	int window_size = r->lastSeqWritten - r->lastSeqAcked;
 	packet_t packet;
-    memset(&(packet.data),0,MAX_DATA_SIZE);
+	memset(&(packet.data),0,MAX_DATA_SIZE);
 	uint32_t packet_size = 0;
-
+	
 	while(1){
 		//Check if we can create a new window entry
 		if(window_size > r->cc->window || window_size<0){
@@ -469,19 +457,22 @@ rel_read (rel_t *r)
 			return;
 		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
+			if(r->got_EOF){
+				r->sender_finished = true;
+			}
 			return;
 		}/* else if(bytes_read<0 && errno==EIO){
-			fprintf(stderr, "Conn_input failed due to IO error:");
-			continue;
-
-		}else if(!r->state==RST_ESTABLISHED){
-			//No established connection yet!
-			printf("Connection not yet established!\n");
-			return;
-		}*/
+		  fprintf(stderr, "Conn_input failed due to IO error:");
+		  continue;
+		  
+		  }else if(!r->state==RST_ESTABLISHED){
+		  //No established connection yet!
+		  printf("Connection not yet established!\n");
+		  return;
+		  }*/
 		//Valid packet
 		window_entry *window = (window_entry *)xmalloc(sizeof(window_entry));
-
+		
 		if(bytes_read<0) { // EOF reached
 			packet_size = PKT_HEADER_SIZE;
 			//EOF packet has no data but has seqno
@@ -494,7 +485,7 @@ rel_read (rel_t *r)
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
-
+			
 			r->sent_EOF = true;
 		}
 		else {
@@ -510,28 +501,28 @@ rel_read (rel_t *r)
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
 		}
-				//update window parameters
+		//update window parameters
 		r->lastSeqWritten = htonl(window->pkt.seqno);
-
+		
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-
+		
 		//Decode to host before enqueue
 		window->pkt.len = ntohs (window->pkt.len);
 		window->pkt.ackno = ntohl (window->pkt.ackno);
 		window->pkt.seqno = ntohl(window->pkt.seqno);
-
+		
 		//enqueue
 		windowList_enqueue(r, window, &r->sending_window);
-
+		
 		r->lastSeqSent = htonl(window->pkt.seqno);
 		window_size = r->lastSeqWritten - r->lastSeqAcked;
-
+		
 	}
-
-
+	
+	
 	//I don't think that the packets will actually get sent here...  but maybe?
-
+	
 }
 
 void
@@ -540,33 +531,45 @@ rel_output (rel_t *r)
 	/*
 		call conn_output to output data received in UDP packets to STDOUT
 		conn_bufspace returns how much space is available for use by conn_output
-
+	 
 		Acknowledge packets here - if we cannot fit them into the output, don't ack them
-
+	 
 		library calls this when output has drained, at which point you can call conn_bufspace to
-			see how much buffer sapce you have and send out more Acks to get more data from the
-			remote side
+	 see how much buffer sapce you have and send out more Acks to get more data from the
+	 remote side
 	 */
-
+	
 	window_entry *traverse = r->receiving_window;
 	while(traverse != NULL) {
 		if(!traverse->valid) {break;}
 		else if(conn_bufspace(r->c) >= traverse->pkt.len - PKT_HEADER_SIZE){
 			//commit the data
-			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
-
+			if(!r->got_EOF){
+				conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
+				
+				//was the pkt an EOF?
+				if(traverse->pkt.len == PKT_HEADER_SIZE){
+					fprintf(stderr, "OUT EOF\n");
+					//received an EOF packet
+					r->got_EOF = true;
+					if(r->sender_finished) rel_destroy(r);
+					return;
+				}
+			}
+			
+			
 			traverse=traverse->next;
 			r->nextSeqExpected++; //update the next expected sequence number
-
+			
 			window_entry *fetch = windowList_dequeue(r, &r->receiving_window); //slide the window - delete the newly written packet
 			if(fetch != NULL){
 				free(fetch);
-			} else {printf("we done fucked up\n");}
+			} else {fprintf(stderr, "we done fucked up\n");}
 		}
 	}
-
+	
 	//if there is nothing more in the receiving window and we have received an EOF packet, destroy
-    //if(r->receiving_window==NULL && r->got_EOF) rel_destroy(r);
+	//if(r->receiving_window==NULL && r->got_EOF) rel_destroy(r);
 }
 
 void
@@ -574,7 +577,7 @@ rel_timer ()
 {
 	/* Retransmit any packets that need to be retransmitted */
 	//iterate throught the window and if an item is valid & it was transmitted > rel_t->cc->timeout milliseconds ago, then retransmit it.
-
+	
 	// TODO: fix this method, possibly with a different window
 	rel_t *curr = rel_list;
 	while(curr){
@@ -582,8 +585,8 @@ rel_timer ()
 		while(curr_win){
 			struct timespec currTime; clock_gettime(CLOCK_MONOTONIC,&currTime);
 			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec >
-		(curr->cc->timeout*(long)1000000)){
-
+			   (curr->cc->timeout*(long)1000000)){
+				
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
 				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
@@ -592,5 +595,5 @@ rel_timer ()
 		}
 		curr = curr->next;
 	}
-
+	
 }
