@@ -83,6 +83,10 @@ struct reliable_state {
 };
 rel_t *rel_list;
 
+void printPacket(packet_t *pkt){
+	fprintf(stderr, "Packet #=%d | l=%d | ack=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), ntohl(pkt->ackno));
+}
+
 long sumPkt(packet_t *_pkt){
     char *pkt = _pkt->data;
     long sum = 0;
@@ -91,6 +95,7 @@ long sumPkt(packet_t *_pkt){
         sum+=(long)pkt[i];
     }
     //printf("Pkt_sum = %ld\n",sum);
+	return 0;
 }
 
 //Method Declarations
@@ -121,6 +126,21 @@ void process_ack(rel_t *r, packet_t* pkt){
 	}
 
 	r->lastSeqAcked = ackno-1;
+	//retransmit packets
+	
+	current = r->sending_window;
+	packet_t packet;
+	int size;
+	while(current!=NULL){
+		//fprintf(stderr, "Resending packets!\n");
+		memcpy(&packet, &current->pkt, sizeof(packet_t));
+		size = packet.len;
+		//Decode to host before enqueue
+		packet.len = htons (packet.len);
+		packet.ackno = htonl (packet.ackno);
+		packet.seqno = htonl(packet.seqno);
+		conn_sendpkt(r->c, &packet, size);
+	}
 	//call rel_read
 	rel_read(r);
 }
@@ -287,6 +307,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
+	printPacket(pkt);
 	//printf("I received a packet!\n");
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
@@ -412,7 +433,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	while(current->pkt.seqno < seqno){
 		int current_seqno = current->pkt.seqno;
 		if(safetyvar_memleak>r->cc->window+10){
-			printf("ERROR: MEMLEAK at SMARTADD!\n");
+			fprintf(stderr, "ERROR: MEMLEAK at SMARTADD!\n");
 		}
 
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
@@ -442,7 +463,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		current = current->next;
 		safetyvar_memleak++;
 	}
-	printf("ERROR: Could not smart add. Not smart enough...\n");
+	fprintf(stderr, "ERROR: Could not smart add. Not smart enough...\n");
 	return -1;
 }
 
@@ -496,7 +517,7 @@ rel_read (rel_t *r)
 	while(1){
 		//Check if we can create a new window entry
 		if(window_size > r->cc->window || window_size<0){
-			printf("ERROR: Window size greater than maximum permitted window size or negative");
+			fprintf(stderr,"ERROR: Window size greater than maximum permitted window size or negative");
 			return;
 		} else if (window_size == r->cc->window){
 			//Window is full!
@@ -545,7 +566,6 @@ rel_read (rel_t *r)
 
 		//send packet?
 		conn_sendpkt(r->c, &window->pkt, packet_size);
-
 		sumPkt(&window->pkt);
 
 		//Decode to host before enqueue
@@ -560,7 +580,7 @@ rel_read (rel_t *r)
 		window_size = r->lastSeqWritten - r->lastSeqAcked;
 
 	}
-
+	
 
 	//I don't think that the packets will actually get sent here...  but maybe?
 
