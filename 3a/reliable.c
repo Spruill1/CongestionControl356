@@ -394,7 +394,6 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			if(!current->valid){
 				//Next window exists, check if valid, update if necessary
 				memcpy(&current->pkt, pkt, sizeof(packet_t));
-				clock_gettime(CLOCK_MONOTONIC,&current->sen);
 				current->valid = true;
 				return 1;
 			} else{
@@ -568,13 +567,16 @@ rel_timer ()
 	while(curr){
 		window_entry *curr_win = rel_list->sending_window;
 		while(curr_win){
-			fprintf(stderr, "pck %d | %d", curr_win->pkt.seqno, curr_win->valid);
-
-			struct timespec currTime;
+			struct timespec currTime, diffTime;
+			
 			clock_gettime(CLOCK_MONOTONIC,&currTime);
-			if(curr_win->valid && currTime.tv_nsec - curr_win->sen.tv_nsec >
-			   (curr->cc->timeout*(long)1000000)){
-				fprintf(stderr, "TIMEOUT! %d", curr_win->pkt.seqno);
+			
+			diffTime.tv_sec = currTime.tv_sec - curr_win->sen.tv_sec;
+			diffTime.tv_nsec = currTime.tv_nsec - curr_win->sen.tv_nsec;
+			fprintf(stderr, "pck %d | %d | %ul | %d \n", curr_win->pkt.seqno, curr_win->valid, diffTime.tv_nsec, curr->cc->timeout);
+
+			if(curr_win->valid && diffTime.tv_nsec >  (curr->cc->timeout*(unsigned long)1000)){
+				fprintf(stderr, "TIMEOUT! %d\n", curr_win->pkt.seqno);
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
 				conn_sendpkt(curr->c,&(curr_win->pkt),ntohs(curr_win->pkt.len)); //send it
