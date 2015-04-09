@@ -469,7 +469,7 @@ rel_read (rel_t *r)
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
-			
+			window->timeout = 0;
 			r->sent_EOF = true;
 		}
 		else {
@@ -484,6 +484,7 @@ rel_read (rel_t *r)
 			//save packet in window entry
 			memcpy(&window->pkt,&packet,sizeof(packet_t));
 			window->valid=true;
+			window->timeout = 0;
 		}
 		//update window parameters
 		r->lastSeqWritten = htonl(window->pkt.seqno);
@@ -573,9 +574,9 @@ rel_timer ()
 			
 			diffTime.tv_sec = currTime.tv_sec - curr_win->sen.tv_sec;
 			diffTime.tv_nsec = currTime.tv_nsec - curr_win->sen.tv_nsec;
-			fprintf(stderr, "pck %d | %d | %ul | %d \n", curr_win->pkt.seqno, curr_win->valid, diffTime.tv_nsec, curr->cc->timeout);
+			fprintf(stderr, "pck %d | %d | %u | %d \n", curr_win->pkt.seqno, curr_win->valid, diffTime.tv_nsec, curr->cc->timeout);
 
-			if(curr_win->valid && diffTime.tv_nsec >  (curr->cc->timeout*(unsigned long)1000)){
+			if(curr_win->valid && curr_win->timeout >=5){
 				fprintf(stderr, "TIMEOUT! %d\n", curr_win->pkt.seqno);
 				packet_t packet;
 				
@@ -583,11 +584,13 @@ rel_timer ()
 				packet.len = htons(packet.len);
 				packet.seqno = htonl(packet.seqno);
 				packet.ackno = htonl(packet.ackno);
-				
+				curr_win->timeout = 0;
 				//the packet is still valid (unacked) and has timed-out, retransmit
 				clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
 				conn_sendpkt(curr->c, &packet, curr_win->pkt.len); //send it
 			}
+			curr_win->timeout++;
+
 			curr_win = curr_win->next;
 		}
 		curr = curr->next;
