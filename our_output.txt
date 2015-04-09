@@ -1,0 +1,71 @@
+TEST  1:  Bi-directionally transfer data...                           [listening on UDP port 39771]
+[listening on UDP port 54758]
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST  2:  Ping-pong short messages back and forth...                  [listening on UDP port 39459]
+[listening on UDP port 43517]
+passed
+TEST  3:  Ping-pong with test for excessive retransmissions...        [listening on UDP port 59429]
+[listening on UDP port 45960]
+tester: lineI: end of file
+tester: headLI: end of file
+FAILED
+TEST  4:  Receiving data from reference implementation...             tester: lineI: end of file
+[listening on UDP port 57720]
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST  5:  Flow control when application doesn't read output...        [listening on UDP port 51496]
+[listening on UDP port 39601]
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+tester: <socket: 3>: hPutBuf: resource vanished (Broken pipe)
+passed
+TEST  6:  Sending data to reference implementation...                 [listening on UDP port 41945]
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST  7:  Bi-directionally interoperating with reference...           [listening on UDP port 38359]
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST  8:  Test for proper end-of-file handling...                     [listening on UDP port 33708]
+[listening on UDP port 51960]
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+tester: <socket: 4>: hPutBuf: resource vanished (Broken pipe)
+FAILED
+TEST  9:  Two-way transfer injecting 5% garbage packets...            [listening on UDP port 46791]
+[listening on UDP port 45772]
+Conn_input failed due to IO error:: Input/output error
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+Conn_input failed due to IO error:: Input/output error
+FAILED
+TEST 10:  Receiving from reference with 2% reordering...              [listening on UDP port 34032]
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST 11:  Two-way transfer with 5% packet duplication...              [listening on UDP port 51003]
+[listening on UDP port 39293]
+Conn_input failed due to IO error:: Input/output error
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+Conn_input failed due to IO error:: Input/output error
+passed
+TEST 12:  Two-way transfer with 2% of packets having bad length...    [listening on UDP port 41183]
+[listening on UDP port 34864]
+FAILED
+TEST 13:  One-way transfer with 2% packet loss...                     [listening on UDP port 47236]
+[listening on UDP port 57567]
+reliable: rlib.c:183: conn_output: Assertion `!c->delete_me && !c->write_eof' failed.
+Conn_input failed due to IO error:: Input/output error
+Conn_input failed due to IO error:: Input/output error
+tester: <socket: 3>: hPutBuf: resource vanished (Broken pipe)
+FAILED
+TEST 14:  Two-way transfer with 2% packet corruption...               [listening on UDP port 59405]
+[listening on UDP port 44176]
+FAILED
+SUMMARY: passed 8/14

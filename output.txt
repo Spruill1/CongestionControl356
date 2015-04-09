@@ -1,0 +1,41 @@
+TEST  1:  Bi-directionally transfer data...                           [listening on UDP port 51065]
+[listening on UDP port 59412]
+passed
+TEST  2:  Ping-pong short messages back and forth...                  [listening on UDP port 49121]
+[listening on UDP port 52761]
+passed
+TEST  3:  Ping-pong with test for excessive retransmissions...        [listening on UDP port 35518]
+[listening on UDP port 57916]
+passed
+TEST  4:  Receiving data from reference implementation...             [listening on UDP port 35266]
+passed
+TEST  5:  Flow control when application doesn't read output...        [listening on UDP port 51041]
+[listening on UDP port 38461]
+passed
+TEST  6:  Sending data to reference implementation...                 [listening on UDP port 46367]
+passed
+TEST  7:  Bi-directionally interoperating with reference...           [listening on UDP port 33063]
+passed
+TEST  8:  Test for proper end-of-file handling...                     [listening on UDP port 35418]
+[listening on UDP port 50416]
+passed
+TEST  9:  Two-way transfer injecting 5% garbage packets...            [listening on UDP port 55715]
+[listening on UDP port 42825]
+passed
+TEST 10:  Receiving from reference with 2% reordering...              [listening on UDP port 54277]
+passed
+TEST 11:  Two-way transfer with 5% packet duplication...              [listening on UDP port 57741]
+[listening on UDP port 56577]
+passed
+TEST 12:  Two-way transfer with 2% of packets having bad length...    [listening on UDP port 38145]
+[listening on UDP port 48100]
+tester: recvFrom: does not exist (Connection refused)
+passed
+TEST 13:  One-way transfer with 2% packet loss...                     [listening on UDP port 39420]
+[listening on UDP port 56078]
+passed
+TEST 14:  Two-way transfer with 2% packet corruption...               [listening on UDP port 35630]
+[listening on UDP port 57486]
+tester: recvFrom: does not exist (Connection refused)
+passed
+SUMMARY: passed 14/14
