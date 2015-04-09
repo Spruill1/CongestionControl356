@@ -65,6 +65,7 @@ struct reliable_state{
 	bool receiver_finished;
 	
 	int pid;
+	int sthresh;
 };
 rel_t *rel_list;
 
@@ -109,6 +110,10 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	rel_list = r;
 	
 	r->next_seqno = 1;
+	
+	//Slow Start
+	r->sthresh = r->cc->window/2;
+	r->cc->window = 1;
 	
 	//Initialize the window
 	r->sending_window = NULL;
@@ -248,9 +253,6 @@ void rel_read (rel_t *r){
 	}
 	else //run in the sender mode
 	{
-		//same logic as lab 1
-		
-  
 		int bytes_read = 0;
 		int window_size = r->lastSeqWritten - r->lastSeqAcked;
 		packet_t packet;
@@ -400,8 +402,12 @@ void process_ack(rel_t *r, packet_t* pkt){
 	window_entry *current = r->sending_window;
 	while(current!=NULL && current->pkt.seqno<ackno && ackno<=r->lastSeqSent){
 		current = windowList_dequeue(r, &r->sending_window);
-		if(current!=NULL)
+		if(current!=NULL){
+			fprintf(stderr, "Freeing %d window %d", current->pkt.seqno, r->cc->window+1);
 			free(current);
+			//Grow window!
+			r->cc->window++;
+		}
 		current = r->sending_window;
 	}
 	
