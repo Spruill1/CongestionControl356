@@ -91,7 +91,7 @@ void printPacket(packet_t *pkt, rel_t *r){
 		fprintf(stderr, "Ack ackno=%d | pid=%d\n", ntohl(pkt->ackno), r->pid);
 		return;
 	}
-	fprintf(stderr, "Packet #=%d | l=%d | pid=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), r->pid);
+	fprintf(stderr, "Packet #=%d | l=%d | pid=%d | need = %d \n",ntohl(pkt->seqno), ntohs(pkt->len), r->pid, r->nextSeqExpected);
 	
 }
 
@@ -113,7 +113,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 	
 	//seqno in flush packets
 	window_entry *current = r->sending_window;
-	while(current!=NULL && current->pkt.seqno<=ackno && ackno<=r->lastSeqSent){
+	while(current!=NULL && current->pkt.seqno<ackno && ackno<=r->lastSeqSent){
 		current = windowList_dequeue(r, &r->sending_window);
 		if(current!=NULL)
 			free(current);
@@ -126,6 +126,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 		//sent an EOF packet and everything has been ACKed.
 		r->sender_finished = true;
 		if(r->receiver_finished) rel_destroy(r);
+		fprintf(stderr, "BADDDDD\n");
 		return;
 	}
 	
@@ -294,6 +295,7 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
 	
 	if( cksum((void*)pkt, n) != received_checksum){
+		fprintf(stderr, "BAD CHECKSUM");
 		return;
 	}
 	// enforce host byte order
@@ -352,7 +354,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->receiving_window;
-	
+
 	if(r->got_EOF){
 		return 0;
 	} else if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
@@ -374,31 +376,44 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	window_entry *current = r->receiving_window;
 	while(current->pkt.seqno <= seqno){
 		int current_seqno = current->pkt.seqno;
+		fprintf(stderr, " ->SA: %d ", current_seqno);
+
 		if(safetyvar_memleak>r->cc->window+10){
 			fprintf(stderr, "ERROR: MEMLEAK at SMARTADD!\n");
 		}
 		//make next if necessary
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
+			fprintf(stderr, "SA1: %d ", current_seqno);
+
 			//Next window does not exist. Create subsequent window and insert
-			w = (window_entry *)xmalloc(sizeof(window_entry));
-			memset(&w->pkt.data, 0, sizeof(packet_t));
-			w->pkt.seqno = current_seqno + 1;
-			w->valid = false;
-			w->next = current->next;
-			w->prev = current;
-			current->next = w;
+			window_entry *nw = (window_entry *)xmalloc(sizeof(window_entry));
+			memset(&nw->pkt.data, 0, sizeof(packet_t));
+			nw->pkt.seqno = current_seqno + 1;
+			nw->valid = false;
+			nw->next = current->next;
+			nw->prev = current;
+			current->next = nw;
 			continue;
 		}
-		
+		fprintf(stderr, "SA5: %d %d ", current_seqno, seqno);
+
 		if(current_seqno == seqno){
 			if(!current->valid){
+				fprintf(stderr, "SA2: %d ", current_seqno);
+
 				//Next window exists, check if valid, update if necessary
 				memcpy(&current->pkt, pkt, sizeof(packet_t));
 				current->valid = true;
 				return 1;
 			} else{
-				if(memcmp(pkt, &current->pkt, pkt->len)==0)
+				fprintf(stderr, "SA3: %d ", current_seqno);
+
+				if(memcmp(pkt, &current->pkt, pkt->len)==0){
+					
+					fprintf(stderr, "SA4: %d ", current_seqno);
+
 					return 0; //packet was already there!
+				}
 				else{
 					fprintf(stderr, "ERROR: SAME PACKET SEQNO, DIFFERENT DATA");
 					return -1;
@@ -550,6 +565,8 @@ rel_output (rel_t *r)
 			if(fetch != NULL){
 				free(fetch);
 			} else {fprintf(stderr, "we done fucked up\n");}
+		} else {
+			fprintf(stderr, "BUFFER FUCKIGN FULL\n");
 		}
 	}
 	
