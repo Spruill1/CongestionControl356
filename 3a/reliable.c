@@ -81,13 +81,16 @@ struct reliable_state {
 	uint32_t lastSeqReceived;
 	bool got_EOF;  //have we received an EOF packet?
 	bool receiver_finished;
-	
-	int state;
 };
 rel_t *rel_list;
 
 void printPacket(packet_t *pkt){
-	fprintf(stderr, "Packet #=%d | l=%d | ack=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), ntohl(pkt->ackno));
+	if(ntohs(pkt->len)==ACK_HEADER_SIZE){
+		fprintf(stderr, "Ack ackno=%d | pid=%d\n", ntohl(pkt->ackno), getpid());
+		return;
+	}
+	fprintf(stderr, "Packet #=%d | l=%d | pid=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), ntohl(pkt->ackno), getpid());
+
 }
 
 //Method Declarations
@@ -214,9 +217,6 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	} else{
 		return NULL;
 	}
-	
-	r->state = RST_LISTEN;
-	
 	
 	return r;
 }
@@ -348,6 +348,8 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->receiving_window;
+	if(r->got_EOF)
+		return 0;
 	
 	if(r->receiving_window == NULL){
 		//Window list is NULL, use nextSeqExpected as reference
@@ -457,9 +459,6 @@ rel_read (rel_t *r)
 			return;
 		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
-			if(r->got_EOF){
-				r->sender_finished = true;
-			}
 			return;
 		}/* else if(bytes_read<0 && errno==EIO){
 		  fprintf(stderr, "Conn_input failed due to IO error:");
@@ -546,16 +545,16 @@ rel_output (rel_t *r)
 			//commit the data
 			if(!r->got_EOF){
 				conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
-				
-				//was the pkt an EOF?
-				if(traverse->pkt.len == PKT_HEADER_SIZE){
-					fprintf(stderr, "OUT EOF\n");
-					//received an EOF packet
-					r->got_EOF = true;
-					if(r->sender_finished) rel_destroy(r);
-					return;
-				}
+				fprintf(stderr, "Out %d @ %d\n", traverse->pkt.seqno, getpid());
 			}
+			//was the pkt an EOF?
+			if(traverse->pkt.len == PKT_HEADER_SIZE){
+				//received an EOF packet
+				r->got_EOF = true;
+				if(r->sender_finished) rel_destroy(r);
+				break;
+			}
+			
 			
 			
 			traverse=traverse->next;
