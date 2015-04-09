@@ -81,16 +81,18 @@ struct reliable_state {
 	uint32_t lastSeqReceived;
 	bool got_EOF;  //have we received an EOF packet?
 	bool receiver_finished;
+	
+	int pid;
 };
 rel_t *rel_list;
 
-void printPacket(packet_t *pkt){
+void printPacket(packet_t *pkt, rel_t *r){
 	if(ntohs(pkt->len)==ACK_HEADER_SIZE){
-		fprintf(stderr, "Ack ackno=%d | pid=%d\n", ntohl(pkt->ackno), getpid());
+		fprintf(stderr, "Ack ackno=%d | pid=%d\n", ntohl(pkt->ackno), r->pid);
 		return;
 	}
-	fprintf(stderr, "Packet #=%d | l=%d | pid=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), ntohl(pkt->ackno), getpid());
-
+	fprintf(stderr, "Packet #=%d | l=%d | pid=%d\n",ntohl(pkt->seqno), ntohs(pkt->len), r->pid);
+	
 }
 
 //Method Declarations
@@ -201,6 +203,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->lastSeqRead = 0;
 	r->lastSeqReceived = 0;
 	
+	r->pid = getpid();
+	
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
@@ -280,7 +284,7 @@ rel_demux (const struct config_common *cc,
 void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
-	printPacket(pkt);
+	printPacket(pkt, r);
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
 		return;
@@ -348,46 +352,32 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->receiving_window;
-	if(r->got_EOF)
+	
+	if(r->got_EOF){
 		return 0;
-	
-	if(r->receiving_window == NULL){
-		//Window list is NULL, use nextSeqExpected as reference
-		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
-			//ignore packet that has already been processed or that is too far ahead
-			fprintf(stderr,"INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
-			return -1;
-		} else {
-			//This is a valid seqno, add packet
-			w = (window_entry *)xmalloc(sizeof(window_entry));
-			memcpy(&w->pkt, pkt, pkt->len);
-			clock_gettime(CLOCK_MONOTONIC,&w->sen);
-			w->valid = true;
-			r->receiving_window = w;
-			w->next = NULL;
-			w->prev = NULL;
-			return 1;
-		}
-	}
-	
-	//Window_list is not null
-	//Use head to check for window size
-	uint32_t head_seqno = r->receiving_window->pkt.seqno;
-	if(seqno <= head_seqno || head_seqno+r->cc->window < seqno){
+	} else if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
+		//ignore packet that has already been processed or that is too far ahead
 		fprintf(stderr,"INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 		return -1;
+	} else if(r->receiving_window == NULL){
+		w = (window_entry *)xmalloc(sizeof(window_entry));
+		memset(&w->pkt, 0, sizeof(packet_t));
+		w->pkt.seqno = r->nextSeqExpected;
+		w->valid = false;
+		r->receiving_window = w;
+		w->next = NULL;
+		w->prev = NULL;
 	}
 	
-	//Valid seqno!
 	int safetyvar_memleak = 0;
 	//Find and close gaps!
 	window_entry *current = r->receiving_window;
-	while(current->pkt.seqno < seqno){
+	while(current->pkt.seqno <= seqno){
 		int current_seqno = current->pkt.seqno;
 		if(safetyvar_memleak>r->cc->window+10){
 			fprintf(stderr, "ERROR: MEMLEAK at SMARTADD!\n");
 		}
-		
+		//make next if necessary
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
 			//Next window does not exist. Create subsequent window and insert
 			w = (window_entry *)xmalloc(sizeof(window_entry));
@@ -400,19 +390,15 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			continue;
 		}
 		
-		//next sequential window must exist.
-		window_entry *next = current->next;
-		int next_seqno = next->pkt.seqno;
-		
-		if(next_seqno == seqno){
-			if(!next->valid){
+		if(current_seqno == seqno){
+			if(!current->valid){
 				//Next window exists, check if valid, update if necessary
-				memcpy(&next->pkt, pkt, sizeof(packet_t));
-				clock_gettime(CLOCK_MONOTONIC,&next->sen);
-				next->valid = true;
+				memcpy(&current->pkt, pkt, sizeof(packet_t));
+				clock_gettime(CLOCK_MONOTONIC,&current->sen);
+				current->valid = true;
 				return 1;
 			} else{
-				if(memcmp(pkt, &next->pkt, pkt->len)==0)
+				if(memcmp(pkt, &current->pkt, pkt->len)==0)
 					return 0; //packet was already there!
 				else{
 					fprintf(stderr, "ERROR: SAME PACKET SEQNO, DIFFERENT DATA");
