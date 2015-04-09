@@ -17,7 +17,7 @@
 #include "rlib.h"
 
 //Reliable TCP States will be later transferred to rlib.h
-/*
+
 #define RST_CLOSED			0
 #define RST_LISTEN			1
 #define RST_SYN_SENT		2
@@ -30,7 +30,7 @@
 #define RST_LAST_ACK		9
 #define RST_READ			10
 #define RST_WRITE			11
- */
+
 
 // example uses different server and client states, thoughts? -John
 
@@ -82,7 +82,7 @@ struct reliable_state {
 	bool got_EOF;  //have we received an EOF packet?
 	bool receiver_finished;
 
-	//int state;
+	int state;
 };
 rel_t *rel_list;
 
@@ -103,7 +103,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 	//check if packet is in window
 	uint32_t ackno = pkt->ackno;
 	if(ackno < r->lastSeqAcked || r->lastSeqSent<ackno){
-		printf("INFO: received ack for %d seqno, not in window %d - %d",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
+		fprintf(stderr, "INFO: received ack for %d seqno, not in window %d - %d\n",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
 
 	//seqno in flush packets
@@ -120,26 +120,12 @@ void process_ack(rel_t *r, packet_t* pkt){
     if(r->sending_window==NULL && r->sent_EOF){
         //sent an EOF packet and everything has been ACKed.
         r->sender_finished = true;
-
         if(r->receiver_finished) rel_destroy(r);
+		return;
     }
 
 	r->lastSeqAcked = ackno-1;
-	//retransmit packets
-
-	current = r->sending_window;
-	packet_t packet;
-	int size;
-	while(current!=NULL){
-		//fprintf(stderr, "Resending packets!\n");
-		memcpy(&packet, &current->pkt, sizeof(packet_t));
-		size = packet.len;
-		//Decode to host before enqueue
-		packet.len = htons (packet.len);
-		packet.ackno = htonl (packet.ackno);
-		packet.seqno = htonl(packet.seqno);
-		conn_sendpkt(r->c, &packet, size);
-	}
+	
 	//call rel_read
 	rel_read(r);
 }
@@ -197,24 +183,11 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	rel_list = r;
 
 	r->next_seqno = 1;
+	
+	//Initialize the window
 	r->sending_window = NULL;
 	r->receiving_window = NULL;
-	//initialize the window
-	/*
-	r->window_list = xmalloc(sizeof(struct window_entry));
-	r->window_list->valid = false;
-	window_entry *temp_list1 = r->window_list;
-	int i;
-	printf("window size is %i\n", cc->window);
-	for(i=1;i<cc->window;i++){
-		struct window_entry *temp_list2 = xmalloc(sizeof(struct window_entry));
-		temp_list2->prev = temp_list1;
-		temp_list2->valid = false;
-		temp_list2->next = NULL;
-		temp_list1->next = temp_list2;
-		temp_list1 = temp_list2;
-	}*/
-
+	
 	//Sender
 	r->lastSeqAcked = 0;
 	r->lastSeqWritten = 0;
@@ -242,7 +215,8 @@ rel_create (conn_t *c, const struct sockaddr_storage *ss,
 		return NULL;
 	}
 
-	//r->state = RST_LISTEN;
+	r->state = RST_LISTEN;
+	
 
 	return r;
 }
@@ -257,7 +231,7 @@ rel_destroy (rel_t *r)
 
 	struct timespec end_time;
 	clock_gettime(CLOCK_MONOTONIC,&end_time);
-	printf("The time taken to transfer the file was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
+	fprintf(stderr, "File transfer was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
 
 	conn_destroy (r->c);
 
@@ -307,7 +281,6 @@ void
 rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 {
 	printPacket(pkt);
-	//printf("I received a packet!\n");
 	// Check packet formation
 	if ((size_t) ntohs(pkt->len) < n){
 		return;
@@ -315,38 +288,44 @@ rel_recvpkt (rel_t *r, packet_t *pkt, size_t n)
 	// Check checksum
 	uint16_t received_checksum = pkt->cksum;
 	memset(&(pkt->cksum),0,sizeof(pkt->cksum));
-	//printf("recvpkt - 2\n");
+
 	if( cksum((void*)pkt, n) != received_checksum){
 		return;
 	}
 	// enforce host byte order
 	pkt->len = ntohs (pkt->len);
 	pkt->ackno = ntohl (pkt->ackno);
-	if (pkt->len > ACK_HEADER_SIZE) pkt->seqno = ntohl(pkt->seqno);
-
-	//printf("The packet wasn't corrupted!\n");
+	
+	// make sure packet length is valid.
+	if (pkt->len > ACK_HEADER_SIZE){
+		pkt->seqno = ntohl(pkt->seqno);
+	} else if(pkt->len < ACK_HEADER_SIZE || pkt->len > (MAX_DATA_SIZE+PKT_HEADER_SIZE)){
+		fprintf(stderr, "Got packet of invalid size.\n");
+		return;
+	}
+	
 	// Do some stuff with the packets
 	// Start by looking for Acks
 	if (pkt->len == ACK_HEADER_SIZE){
 		process_ack(r,pkt);
 	}
+	
 	// must be data if it's not corrupted and not an ACK
 	else {
-		//printf("adding the packet to the window\n");
 		int result = windowList_smartAdd(r,pkt);
-		//printf("processing the output. smart add was: %i\n",result);
-
+		//TODO: CHECK BEFORE
 		//was the pkt an EOF?
         if(pkt->len==PKT_HEADER_SIZE && result>0){
             //received an EOF packet
             r->got_EOF = true;
             r->receiver_finished=true;
-
-            if(r->sender_finished) rel_destroy(r);
+			r->nextSeqExpected = pkt->ackno-1;
+           	send_ack(r);
+			if(r->sender_finished) rel_destroy(r);
+			return;
         }
 
 		rel_output(r);
-		//printf("sending an ACK!\n\n");
 		send_ack(r);
 	}
 }
@@ -381,37 +360,12 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 
 	uint32_t seqno = pkt->seqno;
 	struct window_entry *w = r->receiving_window;
-	/*
-	uint32_t window_seqno = r->nextSeqExpected;
-	printf("packet seq: %"PRIu32", and nextExpectedSeq:%"PRIu32";\n",seqno,window_seqno);
-	while(w != NULL){
-		if(seqno == window_seqno){
-			if (w->valid == 1){
-				return 0; //already there and valid
-			}
-			printf("pkt->len: %i\n",pkt->len);
-			//w->pkt = xmalloc(pkt->len);
-			memcpy(&(w->pkt),pkt,pkt->len);
-			w->valid = 1;
-			printf("w->pkt.len: %i\n",w->pkt.len);
-			return 1; //packet added at the right spot
-		}
-		window_seqno++;
-		if (w == NULL){
-			printf("how did this happen?\n");
-		}
-		if (w->next == NULL){
-			printf("equally confusing\n");
-		}
-		w = w->next;
-	}
-	return -1; //couldn't add
-*/
+	
 	if(r->receiving_window == NULL){
 		//Window list is NULL, use nextSeqExpected as reference
 		if(seqno<r->nextSeqExpected || seqno>r->nextSeqExpected+r->cc->window){
 			//ignore packet that has already been processed or that is too far ahead
-			//printf("INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
+			fprintf(stderr,"INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 			return -1;
 		} else {
 			//This is a valid seqno, add packet
@@ -422,7 +376,6 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 			r->receiving_window = w;
 			w->next = NULL;
 			w->prev = NULL;
-
 			return 1;
 		}
 	}
@@ -431,12 +384,11 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 	//Use head to check for window size
 	uint32_t head_seqno = r->receiving_window->pkt.seqno;
 	if(seqno <= head_seqno || head_seqno+r->cc->window < seqno){
-		printf("INFO: Package of seqno %d was not added. Already processed or far ahead\n", seqno);
+		fprintf(stderr,"INFO: Package of seqno %d was not added. Already processed or far ahead.\n", seqno);
 		return -1;
 	}
 
 	//Valid seqno!
-
 	int safetyvar_memleak = 0;
 	//Find and close gaps!
 	window_entry *current = r->receiving_window;
@@ -449,10 +401,12 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		if(current->next == NULL || current->next->pkt.seqno != (current_seqno+1)){
 			//Next window does not exist. Create subsequent window and insert
 			w = (window_entry *)xmalloc(sizeof(window_entry));
+			memset(&w->pkt.data, 0, sizeof(packet_t));
 			w->pkt.seqno = current_seqno + 1;
 			w->valid = false;
 			w->next = current->next;
 			w->prev = current;
+			current->next = w;
 			continue;
 		}
 
@@ -461,47 +415,27 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt){
 		int next_seqno = next->pkt.seqno;
 
 		if(next_seqno == seqno){
-			if(next->valid){
+			if(!next->valid){
 				//Next window exists, check if valid, update if necessary
-				memcpy(&next->pkt, pkt, pkt->len);
+				memcpy(&next->pkt, pkt, sizeof(packet_t));
 				clock_gettime(CLOCK_MONOTONIC,&next->sen);
 				next->valid = true;
-
 				return 1;
-			} else
-				return 0; //packet was already there!
+			} else{
+				if(memcmp(pkt, &next->pkt, pkt->len)==0)
+					return 0; //packet was already there!
+				else{
+					fprintf(stderr, "ERROR: SAME PACKET SEQNO, DIFFERENT DATA");
+					return -1;
+				}
+			}
 		}
+		
 		current = current->next;
 		safetyvar_memleak++;
 	}
 	fprintf(stderr, "ERROR: Could not smart add. Not smart enough...\n");
 	return -1;
-}
-
-void slideWindow(rel_t *r){
-	/*
-	struct window_entry *temp = r->window_list;
-	// first add another entry to the end of the list
-	while(temp->next != NULL){
-		temp = temp->next;
-	}
-	temp->next = xmalloc(sizeof(struct window_entry));
-	temp->next->valid = false;
-	temp->next->prev = temp;
-	temp->next->next = NULL;
-	// slide the window and update the head
-	r->window_list = r->window_list->next;
-	printf("I assume this is where it's breaking?\n");
-	if (r->window_list->prev == NULL){
-		printf("it's null!\n");
-		return;
-	}
-	// TODO: find out why this is breaking
-	//free(r->window_list->prev);
-	printf("yuppp\n");
-	r->window_list->prev = NULL;
-	 */
-
 }
 
 window_entry* windowList_dequeue(rel_t *r, window_entry **head){
@@ -536,10 +470,11 @@ rel_read (rel_t *r)
 		}else if((bytes_read = conn_input(r->c, packet.data, MAX_DATA_SIZE)) == 0){
 			//Nothing to read
 			return;
-		} /*else if(bytes_read<0 && errno==EIO){
-			perror("Conn_input failed due to IO error:");
+		}/* else if(bytes_read<0 && errno==EIO){
+			fprintf(stderr, "Conn_input failed due to IO error:");
+			continue;
 
-		} */ /*else if(!r->state==RST_ESTABLISHED){
+		}else if(!r->state==RST_ESTABLISHED){
 			//No established connection yet!
 			printf("Connection not yet established!\n");
 			return;
@@ -621,7 +556,6 @@ rel_output (rel_t *r)
 			conn_output(r->c,(void*)(traverse->pkt.data),traverse->pkt.len - PKT_HEADER_SIZE);
 
 			traverse=traverse->next;
-			//slideWindow(r); No need for this, smartadd already handles all cases
 			r->nextSeqExpected++; //update the next expected sequence number
 
 			window_entry *fetch = windowList_dequeue(r, &r->receiving_window); //slide the window - delete the newly written packet
