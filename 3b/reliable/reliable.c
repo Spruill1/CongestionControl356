@@ -372,7 +372,7 @@ void rel_timer(){
 	window_entry *curr_win = rel_list->sending_window;
 	while(curr_win){
 		if(curr_win->valid && curr_win->timeout >=5){
-			time_out(r);
+			time_out(curr);
 
 			packet_t packet;
 			memcpy(&packet, &curr_win->pkt, sizeof(packet_t));
