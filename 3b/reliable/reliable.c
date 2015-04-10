@@ -65,6 +65,7 @@ struct reliable_state{
 	int pid;
 	int sthresh;
 	float accumulator;
+	bool timeout;
 };
 rel_t *rel_list;
 
@@ -104,6 +105,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->c = c;
 
 	rel_list = r;
+	r->timeout = false;
 
 	//Allocate ss and cc, exactly one should be NULL
 	if(ss){
@@ -122,6 +124,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 
 	//Slow Start
 	r->sthresh = r->cc->window/2;
+	fprintf(stderr, "Threshold = %d", r->sthresh);
 	r->cc->window = 1;
 
 	//Congestion avoidance
@@ -164,21 +167,28 @@ void rel_destroy (rel_t *r){
 
 	/* Free any other allocated memory here */
 	// free windows
+	
 	window_entry *temp_entry = r->sending_window;
-	while(temp_entry->next != NULL){
-		//free(temp_entry->pkt);
-		temp_entry = temp_entry->next;
-		free(temp_entry->prev);
+	if(temp_entry!=NULL){
+		while(temp_entry->next != NULL){
+			//free(temp_entry->pkt);
+			temp_entry = temp_entry->next;
+			free(temp_entry->prev);
+		}
+		free(temp_entry);
 	}
-	free(temp_entry);
 
+	
 	temp_entry = r->receiving_window;
-	while(temp_entry->next != NULL){
-		//free(temp_entry->pkt);
-		temp_entry = temp_entry->next;
-		free(temp_entry->prev);
+	if(temp_entry!=NULL){
+		
+		while(temp_entry->next != NULL){
+			//free(temp_entry->pkt);
+			temp_entry = temp_entry->next;
+			free(temp_entry->prev);
+		}
+		free(temp_entry);
 	}
-	free(temp_entry);
 
 	//Don't worry about the connection, rlib frees the connection pointer.
 	if(r->ss)
@@ -186,6 +196,8 @@ void rel_destroy (rel_t *r){
 	if(r->cc)
 		free(r->cc);
 	free(r);
+	exit(EXIT_SUCCESS);
+
 }
 
 
@@ -249,7 +261,7 @@ void rel_read (rel_t *r){
 		//  return;
 		//else
 		//  send EOF to the sender
-		if (r->receiver_finished){
+		if (r->sent_EOF){
 			return;
 		}
 		else {
@@ -261,6 +273,7 @@ void rel_read (rel_t *r){
 			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
 			packet.len = htons(packet_size);
 			packet.ackno=htonl(0);
+			packet.rwnd = htonl(r->cc->window);
 			memset(&(packet.cksum),0,sizeof(uint16_t));
 			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
 			//save packet in window entry
@@ -268,7 +281,6 @@ void rel_read (rel_t *r){
 			window->valid=true;
 			window->timeout = 0;
 			r->sent_EOF = true;
-			r->receiver_finished = true;
 			//update window parameters
 			r->lastSeqWritten = htonl(window->pkt.seqno);
 			
@@ -373,7 +385,15 @@ void rel_output (rel_t *r){
 			if(traverse->pkt.len == PKT_HEADER_SIZE){
 				//received an EOF packet
 				r->got_EOF = true;
-				if(r->sender_finished) rel_destroy(r);
+				fprintf(stderr, "GOT EOF at rel_output!\n");
+				if(r->c->sender_receiver != RECEIVER){
+					r->receiver_finished = true;
+					r->sthresh = (traverse->pkt.rwnd)/2;
+				}
+				if(r->sender_finished) {
+					rel_destroy(r);
+					return;
+				}
 				break;
 			}
 
@@ -444,6 +464,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 			if(r->sthresh>r->cc->window){
 				//Grow window exponentially!
 				r->cc->window++;
+				r->timeout = false;
 			} else {
 				//Grow slowly
 				r->accumulator += 1/r->cc->window;
@@ -451,12 +472,14 @@ void process_ack(rel_t *r, packet_t* pkt){
 					r->accumulator = 0;
 					r->cc->window++;
 				}
+				r->timeout = false;
 			}
 		}
 		current = r->sending_window;
 	}
 
-	if(r->sending_window==NULL && r->sent_EOF){
+	if(r->sent_EOF){
+		fprintf(stderr, "RECEIVED ACK FOR EOF!\n");
 		//sent an EOF packet and everything has been ACKed.
 		r->sender_finished = true;
 		if(r->receiver_finished) rel_destroy(r);
@@ -596,11 +619,13 @@ void printPacket(packet_t *pkt, rel_t *r){
 }
 
 void time_out(rel_t *r){
-	if(r->cc->window==1){
+	
+	if(r->cc->window==1 || r->timeout){
 		return;
 	} else if(r->cc->window<1){
 		fprintf(stderr, "ERROR!!! BAD WINDOW\n");
 	}
 	fprintf(stderr,"window %d\n", r->cc->window);
 	r->cc->window = r->cc->window / 2;
+	r->timeout = true;
 }
