@@ -66,6 +66,7 @@ struct reliable_state{
 	
 	int pid;
 	int sthresh;
+	float accumulator;
 };
 rel_t *rel_list;
 
@@ -114,6 +115,9 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	//Slow Start
 	r->sthresh = r->cc->window/2;
 	r->cc->window = 1;
+	
+	//Congestion avoidance
+	r->accumulator = 0;
 	
 	//Initialize the window
 	r->sending_window = NULL;
@@ -405,8 +409,18 @@ void process_ack(rel_t *r, packet_t* pkt){
 		if(current!=NULL){
 			fprintf(stderr, "Freeing %d window %d", current->pkt.seqno, r->cc->window+1);
 			free(current);
-			//Grow window!
-			r->cc->window++;
+			//Calcualte the window size
+			if(r->sthresh>r->cc->window){
+				//Grow window exponentially!
+				r->cc->window++;
+			} else {
+				//Grow slowly
+				r->accumulator += 1/r->cc->window;
+				if(r->accumulator >= 1){
+					r->accumulator = 0;
+					r->cc->window++;
+				}
+			}
 		}
 		current = r->sending_window;
 	}
