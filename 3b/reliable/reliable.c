@@ -16,9 +16,9 @@
 
 #include "rlib.h"
 
-#define ACK_HEADER_SIZE		8
-#define PKT_HEADER_SIZE		12
-#define MAX_DATA_SIZE		500
+#define ACK_HEADER_SIZE		12
+#define PKT_HEADER_SIZE		16
+#define MAX_DATA_SIZE		1000
 
 /*
  This struct will keep track of packets in our sending/receiving windows
@@ -147,13 +147,15 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
-
+	if(r->c->sender_receiver == RECEIVER)
+	{
+		rel_read (r);
+	}
 	return r;
 }
 
 void rel_destroy (rel_t *r){
 	//Manage linked list
-
 	struct timespec end_time;
 	clock_gettime(CLOCK_MONOTONIC,&end_time);
 	fprintf(stderr, "File transfer was of %ld milliseconds\n",(end_time.tv_nsec - r->start_time.tv_nsec)/(long)(1000000));
@@ -251,17 +253,38 @@ void rel_read (rel_t *r){
 			return;
 		}
 		else {
-			packet_t eof;
-			eof.len =  htons(PKT_HEADER_SIZE);
-			eof.ackno = htonl(0);
-			eof.rwnd = htonl(r->cc->window);
-			eof.seqno = htonl(r->next_seqno); r->next_seqno++;
-			memset(&(eof.cksum),0,sizeof(uint16_t));
-			eof.cksum = cksum((void*)(&eof),PKT_HEADER_SIZE);
-			conn_sendpkt(r->c, &eof, PKT_HEADER_SIZE);
-
+			fprintf(stderr, "Added EOF to window");
+			packet_t packet;
+			window_entry *window = (window_entry *)xmalloc(sizeof(window_entry));
+			int packet_size = PKT_HEADER_SIZE;
+			//EOF packet has no data but has seqno
+			packet.seqno = htonl(r->next_seqno); r->next_seqno++;
+			packet.len = htons(packet_size);
+			packet.ackno=htonl(0);
+			memset(&(packet.cksum),0,sizeof(uint16_t));
+			packet.cksum=cksum((void*)&packet,PKT_HEADER_SIZE);
+			//save packet in window entry
+			memcpy(&window->pkt,&packet,sizeof(packet_t));
+			window->valid=true;
+			window->timeout = 0;
+			r->sent_EOF = true;
 			r->receiver_finished = true;
-			return;
+			//update window parameters
+			r->lastSeqWritten = htonl(window->pkt.seqno);
+			
+			//send packet?
+			conn_sendpkt(r->c, &window->pkt, packet_size);
+			
+			//Decode to host before enqueue
+			window->pkt.len = ntohs (window->pkt.len);
+			window->pkt.ackno = ntohl (window->pkt.ackno);
+			window->pkt.seqno = ntohl(window->pkt.seqno);
+			
+			//enqueue
+			windowList_enqueue(r, window, &r->sending_window);
+			
+			r->lastSeqSent = htonl(window->pkt.seqno);
+
 		}
 	}
 	else //run in the sender mode
@@ -415,7 +438,7 @@ void process_ack(rel_t *r, packet_t* pkt){
 	while(current!=NULL && current->pkt.seqno<ackno && ackno<=r->lastSeqSent){
 		current = windowList_dequeue(r, &r->sending_window);
 		if(current!=NULL){
-			fprintf(stderr, "Freeing %d window %d", current->pkt.seqno, r->cc->window+1);
+			fprintf(stderr, "Freeing %d window %d\n", current->pkt.seqno, r->cc->window+1);
 			free(current);
 			//Calcualte the window size
 			if(r->sthresh>r->cc->window){
@@ -573,6 +596,11 @@ void printPacket(packet_t *pkt, rel_t *r){
 }
 
 void time_out(rel_t *r){
-	fprintf(stderr,"window %d", r->cc->window);
+	if(r->cc->window==1){
+		return;
+	} else if(r->cc->window<1){
+		fprintf(stderr, "ERROR!!! BAD WINDOW\n");
+	}
+	fprintf(stderr,"window %d\n", r->cc->window);
 	r->cc->window = r->cc->window / 2;
 }
