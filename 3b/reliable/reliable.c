@@ -53,6 +53,7 @@ struct reliable_state{
 	uint32_t next_seqno;
 	bool sent_EOF;  //have we sent an EOF packet?
 	bool sender_finished;
+	int duplicate_ack_num;
 	
 	//Receiver
 	uint32_t nextSeqExpected;
@@ -120,6 +121,7 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->lastSeqAcked = 0;
 	r->lastSeqWritten = 0;
 	r->lastSeqSent = 0;
+	r->duplicate_ack_num = 1;
 	
 	//Receiver
 	r->nextSeqExpected = 1;
@@ -406,6 +408,16 @@ void process_ack(rel_t *r, packet_t* pkt){
 		fprintf(stderr, "INFO: received ack for %d seqno, not in window %d - %d\n",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
 	
+	if (ackno - 1 == lastSeqAcked){
+		r->duplicate_ack_num++;
+		if (duplicate_ack_num >= 3){
+			time_out(r);
+		}
+	}
+	else{
+		r->duplicate_ack_num = 1;
+	}
+
 	//seqno in flush packets
 	window_entry *current = r->sending_window;
 	while(current!=NULL && current->pkt.seqno<ackno && ackno<=r->lastSeqSent){
@@ -566,4 +578,8 @@ void printPacket(packet_t *pkt, rel_t *r){
 	}
 	fprintf(stderr, "Packet #=%d | l=%d | pid=%d | need = %d \n",ntohl(pkt->seqno), ntohs(pkt->len), r->pid, r->nextSeqExpected);
 	
+}
+
+void time_out(rel_t *r){
+	// TODO: handle TCP-Reno timo out and fast recovery
 }
