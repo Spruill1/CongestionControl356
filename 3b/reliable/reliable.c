@@ -77,6 +77,7 @@ int windowList_smartAdd(rel_t *r, packet_t *pkt);
 void windowList_enqueue(rel_t *r, window_entry *w, window_entry **head);
 window_entry* windowList_dequeue(rel_t *r, window_entry **head);
 void printPacket(packet_t *pkt, rel_t *r);
+void time_out(rel_t *r);
 
 
 
@@ -103,6 +104,19 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	r->c = c;
 
 	rel_list = r;
+
+	//Allocate ss and cc, exactly one should be NULL
+	if(ss){
+		r->ss = xmalloc(sizeof(struct sockaddr_storage));
+		memcpy(r->ss,ss,sizeof(struct sockaddr_storage));
+		cc = NULL;
+	} else if(cc){
+		r->cc = xmalloc(sizeof(struct config_common));
+		memcpy(r->cc,cc,sizeof(struct config_common));
+		ss = NULL;
+	} else{
+		return NULL;
+	}
 
 	r->next_seqno = 1;
 
@@ -133,19 +147,6 @@ rel_t * rel_create (conn_t *c, const struct sockaddr_storage *ss,
 	/* Do any other initialization you need here */
 	//Initialize timer
 	clock_gettime(CLOCK_MONOTONIC,&r->start_time);
-
-	//Allocate ss and cc, exactly one should be NULL
-	if(ss){
-		r->ss = xmalloc(sizeof(struct sockaddr_storage));
-		memcpy(r->ss,ss,sizeof(struct sockaddr_storage));
-		cc = NULL;
-	} else if(cc){
-		r->cc = xmalloc(sizeof(struct config_common));
-		memcpy(r->cc,cc,sizeof(struct config_common));
-		ss = NULL;
-	} else{
-		return NULL;
-	}
 
 	return r;
 }
@@ -399,10 +400,9 @@ void process_ack(rel_t *r, packet_t* pkt){
 	if(ackno < r->lastSeqAcked || r->lastSeqSent<ackno){
 		fprintf(stderr, "INFO: received ack for %d seqno, not in window %d - %d\n",pkt->ackno,r->lastSeqAcked,r->lastSeqAcked+r->cc->window);
 	}
-
-	if (ackno - 1 == lastSeqAcked){
+	if (ackno - 1 == r->lastSeqAcked){
 		r->duplicate_ack_num++;
-		if (duplicate_ack_num >= 3){
+		if (r->duplicate_ack_num >= 3){
 			time_out(r);
 		}
 	}
