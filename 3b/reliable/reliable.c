@@ -259,13 +259,13 @@ void rel_read (rel_t *r){
 		}
 		else {
 			packet_t eof;
-			eof.len =  htons(PACKET_HEADER_SIZE);
+			eof.len =  htons(PKT_HEADER_SIZE);
 			eof.ackno = htonl(0);
 			eof.rwnd = htonl(r->cc->window);
 			eof.seqno = htonl(r->seqno); r->seqno++;
 			memset(&(eof.cksum),0,sizeof(uint16_t));
-			eof.cksum = cksum((void*)(&eof),PACKET_HEADER_SIZE);
-			conn_sendpkt(r->c, &eof, PACKET_HEADER_SIZE);
+			eof.cksum = cksum((void*)(&eof),PKT_HEADER_SIZE);
+			conn_sendpkt(r->c, &eof, PKT_HEADER_SIZE);
 
 			r->receiver_finished = true;
 			return;
