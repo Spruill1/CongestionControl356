@@ -573,5 +573,6 @@ void printPacket(packet_t *pkt, rel_t *r){
 }
 
 void time_out(rel_t *r){
+	fprintf(stderr,"window %d", r->cc->window);
 	r->cc->window = r->cc->window / 2;
 }
