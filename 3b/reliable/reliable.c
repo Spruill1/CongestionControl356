@@ -370,13 +370,6 @@ void rel_timer(){
 	rel_t *curr = rel_list;
 	window_entry *curr_win = rel_list->sending_window;
 	while(curr_win){
-		struct timespec currTime, diffTime;
-		
-		clock_gettime(CLOCK_MONOTONIC,&currTime);
-		
-		diffTime.tv_sec = currTime.tv_sec - curr_win->sen.tv_sec;
-		diffTime.tv_nsec = currTime.tv_nsec - curr_win->sen.tv_nsec;
-		
 		if(curr_win->valid && curr_win->timeout >=5){
 			packet_t packet;
 			
@@ -385,8 +378,6 @@ void rel_timer(){
 			packet.seqno = htonl(packet.seqno);
 			packet.ackno = htonl(packet.ackno);
 			curr_win->timeout = 0;
-			//the packet is still valid (unacked) and has timed-out, retransmit
-			clock_gettime(CLOCK_MONOTONIC,&(curr_win->sen)); //udpate the time sent
 			conn_sendpkt(curr->c, &packet, curr_win->pkt.len); //send it
 		}
 		curr_win->timeout++;
